@@ -1,90 +1,81 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { WS_BASE_URL } from '../config';
 
 const BATCH_INTERVAL_MS = 100;
+const MAX_CHART_POINTS = 100;
+const RECONNECT_DELAY_MS = 2000;
 
 export const useMarketData = (symbol) => {
     const [data, setData] = useState([]);
     const [latestSnapshot, setLatestSnapshot] = useState(null);
     const [isConnected, setIsConnected] = useState(false);
-    
-    // Buffer for incoming messages
-    const bufferRef = useRef([]);
-    const wsRef = useRef(null);
+
+    // Newest raw message since the last render tick; older ones are dropped without parsing
+    const latestRawRef = useRef(null);
 
     useEffect(() => {
         if (!symbol) return;
 
-        const wsUrl = `ws://localhost:8000/ws/stream/${symbol}`;
-        const ws = new WebSocket(wsUrl);
-        wsRef.current = ws;
+        // Start fresh so the chart never mixes two symbols
+        setData([]);
+        setLatestSnapshot(null);
+        latestRawRef.current = null;
 
-        ws.onopen = () => {
-            console.log(`Connected to ${symbol}`);
-            setIsConnected(true);
+        let ws;
+        let reconnectTimer;
+        let stopped = false;
+
+        const connect = () => {
+            ws = new WebSocket(`${WS_BASE_URL}/ws/stream/${symbol}`);
+
+            ws.onopen = () => setIsConnected(true);
+
+            ws.onmessage = (event) => {
+                latestRawRef.current = event.data;
+            };
+
+            ws.onclose = () => {
+                setIsConnected(false);
+                if (!stopped) {
+                    reconnectTimer = setTimeout(connect, RECONNECT_DELAY_MS);
+                }
+            };
         };
 
-        ws.onmessage = (event) => {
+        connect();
+
+        // Render at most one update per interval, however fast ticks arrive
+        const intervalId = setInterval(() => {
+            const raw = latestRawRef.current;
+            if (raw === null) return;
+            latestRawRef.current = null;
+
+            let message;
             try {
-                const message = JSON.parse(event.data);
-                if (message.type === 'market_data') {
-                    bufferRef.current.push(message);
-                }
+                message = JSON.parse(raw);
             } catch (e) {
                 console.error("Error parsing message", e);
+                return;
             }
-        };
+            if (message.type !== 'market_data' || message.symbol !== symbol) return;
 
-        ws.onclose = () => {
-            console.log(`Disconnected from ${symbol}`);
-            setIsConnected(false);
-        };
+            setLatestSnapshot(message);
+            setData(prev => [...prev, {
+                time: new Date(message.processed_at * 1000).toLocaleTimeString(),
+                timestamp: message.processed_at,
+                vwap: message.analytics.vwap,
+                price: message.data.price
+            }].slice(-MAX_CHART_POINTS));
+        }, BATCH_INTERVAL_MS);
 
         return () => {
+            stopped = true;
+            clearTimeout(reconnectTimer);
+            clearInterval(intervalId);
+            ws.onmessage = null;
             ws.close();
         };
     }, [symbol]);
 
-    // Batch processing
-    useEffect(() => {
-        const intervalId = setInterval(() => {
-            if (bufferRef.current.length > 0) {
-                const newMessages = [...bufferRef.current];
-                bufferRef.current = []; // Clear buffer
-
-                // Process batch
-                // We append to historical data for charts, and update latest snapshot
-                
-                // For charts, we might not want to keep ALL ticks if there are thousands.
-                // We'll just take the latest one from the batch or all of them depending on chart performance.
-                // For 50k ticks/sec (10k per symbol), even 100ms is 1000 ticks.
-                // We should probably downsample for visualization.
-                // Let's take the last item of the batch for the chart update to be efficient, 
-                // or average them.
-                
-                const lastMsg = newMessages[newMessages.length - 1];
-                
-                setLatestSnapshot(lastMsg);
-                
-                // Update history with only the last point to avoid crashing the chart
-                setData(prev => {
-                    const newData = [...prev, {
-                        time: new Date(lastMsg.processed_at * 1000).toLocaleTimeString(),
-                        timestamp: lastMsg.processed_at,
-                        vwap: lastMsg.analytics.vwap,
-                        price: lastMsg.data.price
-                    }];
-                    // Keep last 100 points
-                    if (newData.length > 100) {
-                        return newData.slice(newData.length - 100);
-                    }
-                    return newData;
-                });
-            }
-        }, BATCH_INTERVAL_MS);
-
-        return () => clearInterval(intervalId);
-    }, []);
-
     return { data, latestSnapshot, isConnected };
 };
-

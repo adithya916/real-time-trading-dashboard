@@ -1,12 +1,13 @@
 import asyncio
+import os
 import time
-import json
 import logging
 import statistics
-from typing import Dict, List
+from typing import Dict
 from contextlib import asynccontextmanager
 
 import orjson
+from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 import redis.asyncio as redis
@@ -14,154 +15,169 @@ import redis.asyncio as redis
 from data_simulator import MarketDataSimulator, SYMBOLS
 from analytics import MarketAnalytics
 
+load_dotenv()
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("MarketServer")
 
-# Redis Configuration
-REDIS_URL = "redis://localhost:6379"
+# Configuration
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
+CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",") if o.strip()]
+CHANNEL_PREFIX = "market_data_feed"
+MAX_PUBLISH_BATCH = 500
 redis_client = None
 
 # Global State
 analytics_engine: Dict[str, MarketAnalytics] = {s: MarketAnalytics() for s in SYMBOLS}
-latency_metrics: List[float] = []
+
+
+def channel_for(symbol: str) -> str:
+    return f"{CHANNEL_PREFIX}:{symbol}"
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
     global redis_client
-    redis_client = redis.from_url(REDIS_URL, encoding="utf-8", decode_responses=True)
-    
-    # Start the data generation and processing task
-    simulation_task = asyncio.create_task(data_pipeline())
-    
+    redis_client = redis.from_url(REDIS_URL, decode_responses=True)
+
+    queue = asyncio.Queue(maxsize=10000)
+    simulator = MarketDataSimulator()
+    tasks = [
+        asyncio.create_task(simulator.run_simulation(queue)),
+        asyncio.create_task(data_pipeline(queue)),
+    ]
+
     yield
-    
+
     # Shutdown
-    simulation_task.cancel()
-    await redis_client.close()
+    for task in tasks:
+        task.cancel()
+    await asyncio.gather(*tasks, return_exceptions=True)
+    await redis_client.aclose()
 
 app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=CORS_ORIGINS,
+    allow_methods=["GET"],
 )
 
-async def data_pipeline():
+
+async def data_pipeline(queue: asyncio.Queue):
     """
     Background task:
-    1. Consumes simulated data.
+    1. Drains simulated ticks from the queue in batches.
     2. Calculates indicators.
-    3. Broadcasts via Redis.
+    3. Publishes each tick to its symbol's Redis channel, one round trip per batch.
     """
-    simulator = MarketDataSimulator()
-    queue = asyncio.Queue(maxsize=10000)
-    
-    # Start generator in separate task (or run inside here if it's non-blocking enough)
-    # The simulator.run_simulation is async, so we can run it concurrently.
-    asyncio.create_task(simulator.run_simulation(queue))
-    
     logger.info("Data pipeline started.")
-    
+
+    latency_metrics = []
     last_log_time = time.time()
-    
+    retry_delay = 0.1
+
     while True:
-        try:
-            # Batch process from queue to improve throughput
-            # In a real tight loop, we might process one by one or small batches.
-            # Using get_nowait for speed.
-            
-            # 1. Consume
-            tick = await queue.get()
-            
-            start_processing = time.time()
-            generation_time = tick['timestamp']
-            
+        # 1. Consume everything that is ready, up to the batch limit
+        batch = [await queue.get()]
+        while len(batch) < MAX_PUBLISH_BATCH and not queue.empty():
+            batch.append(queue.get_nowait())
+
+        # 2. Calculate indicators and serialize
+        messages = []
+        for tick in batch:
             symbol = tick['symbol']
-            price = tick['price']
-            volume = tick['volume']
-            
-            # 2. Calculate Indicators
             analytics = analytics_engine[symbol]
-            analytics.update(price, volume)
-            
-            vwap = analytics.get_vwap()
-            volatility = analytics.get_volatility()
-            
-            # 3. Prepare Payload
+            analytics.update(tick['price'], tick['volume'])
+
             payload = {
                 "type": "market_data",
                 "symbol": symbol,
                 "data": tick,
                 "analytics": {
-                    "vwap": round(vwap, 2),
-                    "volatility": round(volatility, 4)
+                    "vwap": round(analytics.get_vwap(), 2),
+                    "volatility": round(analytics.get_volatility(), 6)
                 },
                 "processed_at": time.time()
             }
-            
-            # Serialize
-            # orjson returns bytes, so we need to decode if Redis expects str, 
-            # or send bytes if Redis client is configured for bytes.
-            # Here we used decode_responses=True for Redis, so we need str.
-            message = orjson.dumps(payload).decode('utf-8')
-            
-            # 4. Broadcast
-            await redis_client.publish("market_data_feed", message)
-            
-            # 5. Latency Tracking (Data Gen -> Redis Publish)
-            # We measure time since 'timestamp' (generation) to now (post-publish)
-            # This covers: generation -> queue -> process -> publish
-            end_time = time.time()
-            total_latency_ms = (end_time - generation_time) * 1000
-            latency_metrics.append(total_latency_ms)
-            
-            # Logging P95 every 5 seconds
-            if time.time() - last_log_time > 5:
-                if latency_metrics:
-                    p95 = statistics.quantiles(latency_metrics, n=20)[18] # approx 95th percentile
-                    logger.info(f"P95 Latency: {p95:.2f}ms | Throughput checks processed in 5s: {len(latency_metrics)}")
-                    latency_metrics.clear()
-                last_log_time = time.time()
-                
-        except Exception as e:
-            logger.error(f"Error in pipeline: {e}")
-            await asyncio.sleep(0.1)
+            messages.append((channel_for(symbol), orjson.dumps(payload).decode('utf-8')))
+
+        # 3. Broadcast (ticks are dropped if Redis is unavailable; this is a live feed)
+        try:
+            pipe = redis_client.pipeline(transaction=False)
+            for channel, message in messages:
+                pipe.publish(channel, message)
+            await pipe.execute()
+            retry_delay = 0.1
+        except redis.RedisError as e:
+            logger.error(f"Redis publish failed, retrying in {retry_delay:.1f}s: {e}")
+            await asyncio.sleep(retry_delay)
+            retry_delay = min(retry_delay * 2, 5.0)
+            continue
+
+        # 4. Latency tracking (generation -> queue -> process -> publish)
+        now = time.time()
+        latency_metrics.extend((now - tick['timestamp']) * 1000 for tick in batch)
+
+        # Log P95 and throughput every 5 seconds
+        if now - last_log_time > 5:
+            if len(latency_metrics) >= 2:
+                p95 = statistics.quantiles(latency_metrics, n=20)[18]
+                rate = len(latency_metrics) / (now - last_log_time)
+                logger.info(f"P95 latency (generate -> publish): {p95:.2f}ms | throughput: {rate:,.0f} ticks/s")
+            latency_metrics.clear()
+            last_log_time = now
+
 
 @app.websocket("/ws/stream/{symbol}")
 async def websocket_endpoint(websocket: WebSocket, symbol: str):
+    symbol = symbol.upper()
+    if symbol not in SYMBOLS:
+        await websocket.close(code=1008)
+        return
+
     await websocket.accept()
-    
+
     pubsub = redis_client.pubsub()
-    await pubsub.subscribe("market_data_feed")
-    
-    try:
+    await pubsub.subscribe(channel_for(symbol))
+
+    async def forward_messages():
         async for message in pubsub.listen():
             if message["type"] == "message":
-                data_str = message["data"]
-                # Optimize: Don't deserialize full JSON just to check symbol if possible.
-                # But we need to filter.
-                # String search might be faster than full parse for filtering.
-                if f'"symbol":"{symbol}"' in data_str:
-                    # We send the raw string to avoid double serialization cost
-                    # But we also need to append a "sent_at" timestamp for end-to-end latency check if needed
-                    # The prompt asks to "Log the P95 Latency to confirm it remains sub-50ms" for 
-                    # (Data Generation -> Redis Publish -> WebSocket Send).
-                    # We can't easily modify the string without parsing. 
-                    # We'll trust the server log for the publish part, and maybe client can track total.
-                    # Or we calculate 'Redis Publish -> WebSocket Send' here.
-                    
-                    await websocket.send_text(data_str)
-    except WebSocketDisconnect:
-        logger.info(f"Client disconnected from {symbol}")
+                # Already serialized by the pipeline, so send the raw string
+                await websocket.send_text(message["data"])
+
+    async def wait_for_disconnect():
+        # Clients never send anything; this returns once the socket closes
+        try:
+            while True:
+                await websocket.receive_text()
+        except WebSocketDisconnect:
+            pass
+
+    forward_task = asyncio.create_task(forward_messages())
+    disconnect_task = asyncio.create_task(wait_for_disconnect())
+    try:
+        done, _ = await asyncio.wait({forward_task, disconnect_task}, return_when=asyncio.FIRST_COMPLETED)
+        error = forward_task.exception() if forward_task in done else None
+        if isinstance(error, redis.RedisError):
+            logger.warning(f"Stream for {symbol} stopped, Redis error: {error!r}")
+            try:
+                await websocket.close(code=1011)
+            except Exception:
+                pass  # Socket was already gone
+        else:
+            # Any other forwarding error means the send failed because the client went away
+            logger.info(f"Client disconnected from {symbol}")
     finally:
-        await pubsub.unsubscribe("market_data_feed")
+        for task in (forward_task, disconnect_task):
+            task.cancel()
+        await asyncio.gather(forward_task, disconnect_task, return_exceptions=True)
+        await pubsub.aclose()
+
 
 @app.get("/health")
 async def health():
     return {"status": "ok"}
-

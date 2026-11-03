@@ -1,34 +1,40 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useMarketData } from '../hooks/useMarketData';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { SYMBOLS, WS_BASE_URL } from '../config';
 
-const SYMBOLS = ['AAPL', 'GOOG', 'MSFT', 'AMZN', 'TSLA'];
+const TEST_CONNECTIONS = 1000;
 
 const Dashboard = () => {
     const [selectedSymbol, setSelectedSymbol] = useState('AAPL');
     const { data, latestSnapshot, isConnected } = useMarketData(selectedSymbol);
 
     // Scalability Test Logic
-    const runScalabilityTest = () => {
-        console.log("Starting scalability test...");
-        const connections = [];
-        for (let i = 0; i < 1000; i++) {
+    const testConnectionsRef = useRef([]);
+    const [testStats, setTestStats] = useState(null);
+
+    const stopScalabilityTest = () => {
+        testConnectionsRef.current.forEach(ws => ws.close());
+        testConnectionsRef.current = [];
+        setTestStats(null);
+    };
+
+    const startScalabilityTest = () => {
+        setTestStats({ open: 0, failed: 0 });
+        for (let i = 0; i < TEST_CONNECTIONS; i++) {
             // Distribute across symbols
             const sym = SYMBOLS[i % SYMBOLS.length];
-            const ws = new WebSocket(`ws://localhost:8000/ws/stream/${sym}`);
-            ws.onopen = () => {
-                // console.log(`Dummy connection ${i} open`);
-            };
-            // No-op on message to avoid browser crash, just keeping connection alive
-            ws.onmessage = () => {}; 
-            connections.push(ws);
+            const ws = new WebSocket(`${WS_BASE_URL}/ws/stream/${sym}`);
+            ws.onopen = () => setTestStats(s => s && { ...s, open: s.open + 1 });
+            ws.onerror = () => setTestStats(s => s && { ...s, failed: s.failed + 1 });
+            testConnectionsRef.current.push(ws);
         }
-        console.log(`Opened ${connections.length} dummy connections.`);
-        // Note: Browsers usually limit max connections per domain (approx 6-10).
-        // This test might not reach 1000 real concurrent connections in one browser tab 
-        // due to browser limits, but demonstrates the logic.
-        alert("Scalability test started. Check console. Note: Browser limits may restrict max connections.");
     };
+
+    // Close any test connections when the dashboard unmounts
+    useEffect(() => () => testConnectionsRef.current.forEach(ws => ws.close()), []);
+
+    const formatPrice = (value) => (value == null ? '---' : `$${value.toFixed(2)}`);
 
     return (
         <div className="p-6 max-w-7xl mx-auto">
@@ -54,28 +60,28 @@ const Dashboard = () => {
                 <div className="bg-slate-800 p-4 rounded-xl border border-slate-700">
                     <h3 className="text-slate-400 text-sm mb-1">Last Price</h3>
                     <div className="text-2xl font-mono font-bold text-white">
-                        ${latestSnapshot?.data.price.toFixed(2) || '---'}
+                        {formatPrice(latestSnapshot?.data.price)}
                     </div>
                 </div>
-                
+
                 <div className="bg-slate-800 p-4 rounded-xl border border-slate-700">
-                    <h3 className="text-slate-400 text-sm mb-1">Rolling Volatility (20-tick)</h3>
+                    <h3 className="text-slate-400 text-sm mb-1">Rolling Volatility (20-tick, per tick)</h3>
                     <div className="text-2xl font-mono font-bold text-yellow-400">
-                        {latestSnapshot?.analytics.volatility.toFixed(4) || '---'}
+                        {latestSnapshot ? `${(latestSnapshot.analytics.volatility * 100).toFixed(3)}%` : '---'}
                     </div>
                 </div>
 
                 <div className="bg-slate-800 p-4 rounded-xl border border-slate-700">
-                    <h3 className="text-slate-400 text-sm mb-1">VWAP</h3>
+                    <h3 className="text-slate-400 text-sm mb-1">Session VWAP</h3>
                     <div className="text-2xl font-mono font-bold text-blue-400">
-                        ${latestSnapshot?.analytics.vwap.toFixed(2) || '---'}
+                        {formatPrice(latestSnapshot?.analytics.vwap)}
                     </div>
                 </div>
 
                 <div className="bg-slate-800 p-4 rounded-xl border border-slate-700">
-                    <h3 className="text-slate-400 text-sm mb-1">Volume</h3>
+                    <h3 className="text-slate-400 text-sm mb-1">Last Trade Volume</h3>
                     <div className="text-2xl font-mono font-bold text-slate-200">
-                        {latestSnapshot?.data.volume || '---'}
+                        {latestSnapshot?.data.volume ?? '---'}
                     </div>
                 </div>
             </div>
@@ -138,12 +144,18 @@ const Dashboard = () => {
             </div>
 
             <div className="mt-8 text-center">
-                 <button 
-                    onClick={runScalabilityTest}
+                <button
+                    onClick={testStats ? stopScalabilityTest : startScalabilityTest}
                     className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded transition-colors"
                 >
-                    Run Client-Side Scalability Test (1k Conns)
+                    {testStats ? 'Stop Scalability Test' : `Run Client-Side Scalability Test (${TEST_CONNECTIONS} Conns)`}
                 </button>
+                {testStats && (
+                    <p className="mt-2 text-sm text-slate-400">
+                        {testStats.open} open · {testStats.failed} failed. Browsers cap the total number of
+                        WebSockets per tab, so some connections may fail; use a load-testing tool for real numbers.
+                    </p>
+                )}
             </div>
         </div>
     );
