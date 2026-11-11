@@ -1,0 +1,80 @@
+name: ci-python
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      python: ${{ steps.filter.outputs.python }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            python:
+              - 'services/**'
+              - 'proto/**'
+              - 'scripts/**'
+              - 'bench/**'
+              - 'ruff.toml'
+              - '.github/workflows/ci-python.yml'
+
+  lint:
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.13.7"
+      - name: Ruff (whole repo)
+        run: |
+          uvx ruff@0.8.4 check .
+          uvx ruff@0.8.4 format --check .
+
+  python:
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [legacy]
+    defaults:
+      run:
+        working-directory: services/${{ matrix.service }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.13.7"
+          enable-cache: true
+      - name: Install
+        run: uv sync --frozen --python 3.12
+      - name: Typecheck
+        run: uv run mypy .
+      - name: Test
+        run: uv run pytest -q
+
+  # The one check branch protection requires. It passes when every job above
+  # passed or was skipped by the path filter, so matrix and filter changes never
+  # rename the required check.
+  python-ok:
+    if: always()
+    needs: [changes, lint, python]
+    runs-on: ubuntu-latest
+    steps:
+      - name: All Python jobs passed or were skipped
+        run: |
+          echo '${{ toJSON(needs) }}'
+          if [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" = "true" ]; then exit 1; fi
