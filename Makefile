@@ -1,7 +1,7 @@
 # Common tasks. On Windows, run them from WSL, or copy the command under each target.
 COMPOSE ?= docker compose
 
-.PHONY: help up down logs config fmt lint test check proto
+.PHONY: help up down logs config fmt lint test check proto bench-baseline
 
 help: ## List targets
 	@grep -E '^[a-z-]+:.*##' Makefile | sed 's/:.*##/ -/'
@@ -37,3 +37,6 @@ proto: ## Generate Python code from proto/ (not committed)
 	bash scripts/gen_proto.sh
 
 check: lint test ## Everything CI runs before a merge, except the Docker integration job
+
+bench-baseline: ## Measure the running stack (start it with make up first)
+	cd bench && uv run python baseline/run.py --out results/baseline
