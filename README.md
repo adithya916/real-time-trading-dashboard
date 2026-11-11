@@ -16,45 +16,67 @@ A full-stack trading dashboard prototype built with FastAPI, Redis, and React. A
 - **Frontend**: React, Vite, TailwindCSS, Recharts
 - **Communication**: WebSockets, Redis Pub/Sub
 
+## Repository layout
+
+| Path | What lives there |
+| --- | --- |
+| `services/legacy/` | The current FastAPI backend (simulator, analytics, WebSocket server) |
+| `web/` | React dashboard |
+| `deploy/compose/` | One Compose file per service, joined by `compose.yaml` |
+| `docs/build-plan.html` | Interactive 7-day upgrade plan |
+
+The project is being rebuilt in daily lanes of small branches; see `docs/build-plan.html` and `CHANGELOG.md`.
+
 ## Prerequisites
 
-- **Python 3.10–3.12** (the pinned dependencies don't ship wheels for 3.13)
+- **Docker** with Compose v2.20+ (for `include`)
+- **[uv](https://docs.astral.sh/uv/)** for Python (3.10–3.12; the pinned dependencies don't ship wheels for 3.13)
 - **Node.js 18+**
-- **Redis Server** (defaults to `localhost:6379`)
+- **[pre-commit](https://pre-commit.com/)** for the formatting hooks
 
 ## Installation & Running
 
-### 1. Backend Setup
+### Whole stack with Docker
 
 ```bash
-cd backend
-python -m venv venv
-# Windows
-.\venv\Scripts\activate
-# Linux/Mac
-source venv/bin/activate
+docker compose up -d --build --wait
+```
 
-pip install -r requirements.txt
+This starts Redis and the backend on port 8000. If something else already uses a port, set `LEGACY_PORT` or `REDIS_PORT`, for example `LEGACY_PORT=8001 docker compose up -d --build --wait`.
 
-# Run the server
-uvicorn main_server:app --reload --port 8000
+### Backend without Docker
+
+Needs a Redis server on `localhost:6379`.
+
+```bash
+cd services/legacy
+uv sync
+uv run uvicorn main_server:app --reload --port 8000
 ```
 
 The backend will start simulating data immediately upon launch.
 
-### 2. Frontend Setup
+### Frontend
 
 ```bash
-cd frontend
+cd web
 npm install
 npm run dev
 ```
 
 Open your browser to `http://localhost:5173`.
 
+### Formatting hooks
+
+```bash
+pre-commit install
+```
+
+Every commit then runs ruff, ruff-format and Prettier on the files it touches.
+
 ### Configuration
 
-Copy `backend/.env.example` to `backend/.env` and `frontend/.env.example` to `frontend/.env` to override the defaults:
+Copy `services/legacy/.env.example` to `services/legacy/.env` and `web/.env.example` to `web/.env` to override the defaults:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
