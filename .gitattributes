@@ -1,0 +1,9 @@
+# Store and check out text as LF everywhere, so Windows edits never show up as whole-file diffs.
+* text=auto eol=lf
+*.bat text eol=crlf
+*.png binary
+*.jpg binary
+*.ico binary
+
+# Every branch appends to the changelog; keep both sides instead of conflicting.
+CHANGELOG.md merge=union
