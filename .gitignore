@@ -13,3 +13,9 @@ dist/
 # Logs
 *.log
 
+
+# Python tooling
+.venv/
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/

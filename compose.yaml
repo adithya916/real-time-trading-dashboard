@@ -1,0 +1,7 @@
+# The whole stack. Each service lives in its own file under deploy/compose/,
+# so a feature branch adds one file and one line here instead of editing a shared block.
+name: rtd
+
+include:
+  - deploy/compose/redis.yaml
+  - deploy/compose/legacy.yaml

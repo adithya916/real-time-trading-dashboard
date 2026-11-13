@@ -1,10 +1,10 @@
-import time
+import asyncio
 import math
 import random
-import asyncio
+import time
 
 # Symbols to simulate
-SYMBOLS = ['AAPL', 'GOOG', 'MSFT', 'AMZN', 'TSLA']
+SYMBOLS = ["AAPL", "GOOG", "MSFT", "AMZN", "TSLA"]
 
 # Per-tick volatility of the log price (5 bps)
 TICK_SIGMA = 0.0005
@@ -23,7 +23,7 @@ class MarketDataSimulator:
         """
         symbol = random.choice(self.symbols)
         z = random.gauss(0.0, 1.0)
-        new_price = self.prices[symbol] * math.exp(TICK_SIGMA * z - 0.5 * TICK_SIGMA ** 2)
+        new_price = self.prices[symbol] * math.exp(TICK_SIGMA * z - 0.5 * TICK_SIGMA**2)
         self.prices[symbol] = new_price
 
         # Spread calculation
@@ -32,18 +32,22 @@ class MarketDataSimulator:
         ask = new_price + (spread / 2)
 
         # Level 2 Depth (Top 5)
-        bids = [{'price': round(bid - i*0.05, 2), 'size': random.randint(1, 100)} for i in range(5)]
-        asks = [{'price': round(ask + i*0.05, 2), 'size': random.randint(1, 100)} for i in range(5)]
+        bids = [
+            {"price": round(bid - i * 0.05, 2), "size": random.randint(1, 100)} for i in range(5)
+        ]
+        asks = [
+            {"price": round(ask + i * 0.05, 2), "size": random.randint(1, 100)} for i in range(5)
+        ]
 
         return {
-            'symbol': symbol,
-            'price': round(new_price, 2),
-            'volume': random.randint(1, 500),
-            'timestamp': time.time(),
-            'bid': round(bid, 2),
-            'ask': round(ask, 2),
-            'bids': bids,
-            'asks': asks
+            "symbol": symbol,
+            "price": round(new_price, 2),
+            "volume": random.randint(1, 500),
+            "timestamp": time.time(),
+            "bid": round(bid, 2),
+            "ask": round(ask, 2),
+            "bids": bids,
+            "asks": asks,
         }
 
     async def run_simulation(self, queue: asyncio.Queue, target_rate=50000, batch_size=100):

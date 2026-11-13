@@ -1,19 +1,17 @@
 import asyncio
-import os
-import time
 import logging
+import os
 import statistics
-from typing import Dict
+import time
 from contextlib import asynccontextmanager
 
 import orjson
+import redis.asyncio as redis
+from analytics import MarketAnalytics
+from data_simulator import SYMBOLS, MarketDataSimulator
 from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-import redis.asyncio as redis
-
-from data_simulator import MarketDataSimulator, SYMBOLS
-from analytics import MarketAnalytics
 
 load_dotenv()
 
@@ -23,13 +21,15 @@ logger = logging.getLogger("MarketServer")
 
 # Configuration
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
-CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",") if o.strip()]
+CORS_ORIGINS = [
+    o.strip() for o in os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",") if o.strip()
+]
 CHANNEL_PREFIX = "market_data_feed"
 MAX_PUBLISH_BATCH = 500
 redis_client = None
 
 # Global State
-analytics_engine: Dict[str, MarketAnalytics] = {s: MarketAnalytics() for s in SYMBOLS}
+analytics_engine: dict[str, MarketAnalytics] = {s: MarketAnalytics() for s in SYMBOLS}
 
 
 def channel_for(symbol: str) -> str:
@@ -56,6 +56,7 @@ async def lifespan(app: FastAPI):
         task.cancel()
     await asyncio.gather(*tasks, return_exceptions=True)
     await redis_client.aclose()
+
 
 app = FastAPI(lifespan=lifespan)
 
@@ -88,9 +89,9 @@ async def data_pipeline(queue: asyncio.Queue):
         # 2. Calculate indicators and serialize
         messages = []
         for tick in batch:
-            symbol = tick['symbol']
+            symbol = tick["symbol"]
             analytics = analytics_engine[symbol]
-            analytics.update(tick['price'], tick['volume'])
+            analytics.update(tick["price"], tick["volume"])
 
             payload = {
                 "type": "market_data",
@@ -98,11 +99,11 @@ async def data_pipeline(queue: asyncio.Queue):
                 "data": tick,
                 "analytics": {
                     "vwap": round(analytics.get_vwap(), 2),
-                    "volatility": round(analytics.get_volatility(), 6)
+                    "volatility": round(analytics.get_volatility(), 6),
                 },
-                "processed_at": time.time()
+                "processed_at": time.time(),
             }
-            messages.append((channel_for(symbol), orjson.dumps(payload).decode('utf-8')))
+            messages.append((channel_for(symbol), orjson.dumps(payload).decode("utf-8")))
 
         # 3. Broadcast (ticks are dropped if Redis is unavailable; this is a live feed)
         try:
@@ -119,14 +120,16 @@ async def data_pipeline(queue: asyncio.Queue):
 
         # 4. Latency tracking (generation -> queue -> process -> publish)
         now = time.time()
-        latency_metrics.extend((now - tick['timestamp']) * 1000 for tick in batch)
+        latency_metrics.extend((now - tick["timestamp"]) * 1000 for tick in batch)
 
         # Log P95 and throughput every 5 seconds
         if now - last_log_time > 5:
             if len(latency_metrics) >= 2:
                 p95 = statistics.quantiles(latency_metrics, n=20)[18]
                 rate = len(latency_metrics) / (now - last_log_time)
-                logger.info(f"P95 latency (generate -> publish): {p95:.2f}ms | throughput: {rate:,.0f} ticks/s")
+                logger.info(
+                    f"P95 latency (generate -> publish): {p95:.2f}ms | throughput: {rate:,.0f} ticks/s"
+                )
             latency_metrics.clear()
             last_log_time = now
 
@@ -160,7 +163,9 @@ async def websocket_endpoint(websocket: WebSocket, symbol: str):
     forward_task = asyncio.create_task(forward_messages())
     disconnect_task = asyncio.create_task(wait_for_disconnect())
     try:
-        done, _ = await asyncio.wait({forward_task, disconnect_task}, return_when=asyncio.FIRST_COMPLETED)
+        done, _ = await asyncio.wait(
+            {forward_task, disconnect_task}, return_when=asyncio.FIRST_COMPLETED
+        )
         error = forward_task.exception() if forward_task in done else None
         if isinstance(error, redis.RedisError):
             logger.warning(f"Stream for {symbol} stopped, Redis error: {error!r}")
