@@ -1,0 +1,130 @@
+{
+  "environment": {
+    "machine": "GitHub Actions ubuntu-latest",
+    "os": "Linux-7.0.0-1019-azure-x86_64-with-glibc2.43",
+    "cpu_count": 4,
+    "processor": "x86_64",
+    "python": "3.12.16",
+    "git_sha": "9310bb5"
+  },
+  "settings": {
+    "duration_s": 30,
+    "ramp_duration_s": 10,
+    "warmup_s": 2,
+    "processes": 3
+  },
+  "pipeline": {
+    "ticks_per_s": 39241.833333333336,
+    "per_symbol_per_s": {
+      "AAPL": 7858.9,
+      "GOOG": 7854.833333333333,
+      "MSFT": 7867.0,
+      "AMZN": 7831.6,
+      "TSLA": 7829.5
+    },
+    "generation_to_subscriber": {
+      "samples": 1177255,
+      "p50_ms": 2.216339111328125,
+      "p95_ms": 4.8828125,
+      "p99_ms": 16.31760597229004,
+      "max_ms": 45.39847373962402
+    }
+  },
+  "one_client": {
+    "symbol": "AAPL",
+    "msgs_per_s": 6277.1,
+    "bytes_per_s": 3248668.6,
+    "latency": {
+      "samples": 18831,
+      "p50_ms": 2.1181106567382812,
+      "p95_ms": 4.598140716552734,
+      "p99_ms": 7.431268692016602,
+      "max_ms": 63.40932846069336
+    },
+    "error": null
+  },
+  "ramp": {
+    "limit_p99_ms": 100,
+    "steps": [
+      {
+        "viewers": 1,
+        "errors": 0,
+        "median_msgs_per_s_per_viewer": 6239.4,
+        "total_msgs_per_s": 6239.4,
+        "latency": {
+          "samples": 6239,
+          "p50_ms": 2.1355152130126953,
+          "p95_ms": 3.9250850677490234,
+          "p99_ms": 5.781650543212891,
+          "max_ms": 31.26668930053711
+        }
+      },
+      {
+        "viewers": 2,
+        "errors": 0,
+        "median_msgs_per_s_per_viewer": 4776.1,
+        "total_msgs_per_s": 9602.8,
+        "latency": {
+          "samples": 9602,
+          "p50_ms": 2.580404281616211,
+          "p95_ms": 5.446434020996094,
+          "p99_ms": 9.192466735839844,
+          "max_ms": 28.60736846923828
+        }
+      },
+      {
+        "viewers": 5,
+        "errors": 0,
+        "median_msgs_per_s_per_viewer": 2798.6,
+        "total_msgs_per_s": 13990.0,
+        "latency": {
+          "samples": 13988,
+          "p50_ms": 4.9457550048828125,
+          "p95_ms": 11.13748550415039,
+          "p99_ms": 13.903617858886719,
+          "max_ms": 38.75303268432617
+        }
+      },
+      {
+        "viewers": 10,
+        "errors": 0,
+        "median_msgs_per_s_per_viewer": 1562.9,
+        "total_msgs_per_s": 15653.7,
+        "latency": {
+          "samples": 15647,
+          "p50_ms": 10.766983032226562,
+          "p95_ms": 22.78423309326172,
+          "p99_ms": 36.98587417602539,
+          "max_ms": 86.212158203125
+        }
+      },
+      {
+        "viewers": 25,
+        "errors": 0,
+        "median_msgs_per_s_per_viewer": 750.7,
+        "total_msgs_per_s": 18742.5,
+        "latency": {
+          "samples": 18731,
+          "p50_ms": 22.60446548461914,
+          "p95_ms": 48.83980751037598,
+          "p99_ms": 61.01226806640625,
+          "max_ms": 98.60801696777344
+        }
+      },
+      {
+        "viewers": 50,
+        "errors": 0,
+        "median_msgs_per_s_per_viewer": 370.7,
+        "total_msgs_per_s": 18568.3,
+        "latency": {
+          "samples": 18548,
+          "p50_ms": 67.97623634338379,
+          "p95_ms": 108.09159278869629,
+          "p99_ms": 131.91771507263184,
+          "max_ms": 164.35837745666504
+        }
+      }
+    ],
+    "first_step_over_limit": 50
+  }
+}
