@@ -301,12 +301,12 @@ footer { padding-block: 40px 56px; border-top: 1px solid var(--line); color: var
   <div class="tape" aria-label="Simulated price tape" style="margin-top:28px"><div class="track" id="tape"></div></div>
   <div class="wrap">
     <div class="score" aria-label="Scorecard targets">
-      <div><span class="k">Messages per browser</span><span class="from">~10,000 / s</span><span class="to">≤ 20 / s</span><span class="x">≈ 500× less waste</span></div>
-      <div><span class="k">Book updates, one core</span><span class="from">~13k ticks / s</span><span class="to">≥ 5M / s</span><span class="x">≈ 400× faster</span></div>
-      <div><span class="k">Viewers on one free server</span><span class="from">untested</span><span class="to">10,000</span><span class="x">p99 under 50 ms</span></div>
+      <div><span class="k">Messages per browser</span><span class="from">6,277 / s</span><span class="to">≤ 20 / s</span><span class="x">≈ 300× less waste</span></div>
+      <div><span class="k">Ticks per second, one core</span><span class="from">39k / s</span><span class="to">≥ 5M / s</span><span class="x">≈ 130× in C++</span></div>
+      <div><span class="k">Viewers on one free server</span><span class="from">p99 over 100 ms at 50</span><span class="to">10,000</span><span class="x">p99 under 50 ms</span></div>
       <div><span class="k">Market data</span><span class="from">random numbers</span><span class="to">4 live venues</span><span class="x">checksum-verified books</span></div>
     </div>
-    <p class="small muted" style="margin-top:12px">These are targets. Day 1 measures today's numbers and Day 7 measures the result, and the README reports whatever the benchmarks show.</p>
+    <p class="small muted" style="margin-top:12px">Today's numbers were measured on Day 1 on a 4-CPU GitHub Actions runner (bench/results/baseline.md). The targets get measured the same way on Day 7, and the README reports whatever the benchmarks show.</p>
   </div>
 </section>
 
@@ -315,7 +315,7 @@ footer { padding-block: 40px 56px; border-top: 1px solid var(--line); color: var
     <header>
       <span class="eyebrow">Architecture</span>
       <h2>From one busy process to a pipeline</h2>
-      <p class="muted">Dots are messages. Their density follows the real message rate on a cube-root scale, so 10,000 per second still fits on screen. Red dots reach a browser that throws them away.</p>
+      <p class="muted">Dots are messages. Their density follows the real message rate on a cube-root scale, so thousands per second still fit on screen. Red dots reach a browser that throws them away.</p>
       <div class="seg" role="group" aria-label="Architecture view">
         <button type="button" id="arch-today" aria-pressed="true">Today</button>
         <button type="button" id="arch-after" aria-pressed="false">After Day 7</button>
@@ -682,14 +682,14 @@ flowchart LR
         { id: 'b2', x: 868, y: 195, w: 112, h: 50, t: 'Browser', s: 'draws 10/s' },
         { id: 'b3', x: 868, y: 330, w: 112, h: 50, t: 'Browser', s: 'draws 10/s' }
       ],
-      edges: [['sim', 'q', 13000], ['q', 'pipe', 13000], ['pipe', 'redis', 13000], ['redis', 'h1', 10000], ['redis', 'h2', 10000], ['redis', 'h3', 10000],
-        ['h1', 'b1', 10000, 'waste'], ['h2', 'b2', 10000, 'waste'], ['h3', 'b3', 10000, 'waste']],
+      edges: [['sim', 'q', 39000], ['q', 'pipe', 39000], ['pipe', 'redis', 39000], ['redis', 'h1', 6300], ['redis', 'h2', 6300], ['redis', 'h3', 6300],
+        ['h1', 'b1', 6300, 'waste'], ['h2', 'b2', 6300, 'waste'], ['h3', 'b3', 6300, 'waste']],
       frame: { x: 10, y: 160, w: 500, h: 110, label: 'one Python process · one CPU core' },
-      labels: [{ x: 850, y: 50, text: '10,000 msg/s each', cls: 'svg-label' }],
+      labels: [{ x: 850, y: 50, text: '≈6,300 msg/s each', cls: 'svg-label' }],
       notes: [
         'One Python process generates ticks, computes analytics and serves every WebSocket, all on one CPU core.',
         'Redis Pub/Sub carries JSON text, and every viewer holds its own Redis connection.',
-        'Every tick goes to every browser: about 10,000 messages per second, of which the page draws 10.'
+        'Every tick goes to every viewer of that symbol: about 6,300 messages per second (measured), of which the page draws 10.'
       ]
     },
     after: {
