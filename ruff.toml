@@ -5,3 +5,6 @@ target-version = "py310"
 select = ["E", "F", "W", "I", "UP", "B"]
 # Line length is the formatter's job.
 ignore = ["E501"]
+
+[lint.isort]
+known-first-party = ["mdcommon"]

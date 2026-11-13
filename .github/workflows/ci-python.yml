@@ -25,6 +25,7 @@ jobs:
               - 'proto/**'
               - 'scripts/**'
               - 'bench/**'
+              - 'buf.yaml'
               - 'ruff.toml'
               - '.github/workflows/ci-python.yml'
 
@@ -32,6 +33,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.python == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -42,14 +44,37 @@ jobs:
           uvx ruff@0.8.4 check .
           uvx ruff@0.8.4 format --check .
 
+  proto:
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BUF_VERSION: "1.47.2"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install buf
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          curl -fsSL "https://github.com/bufbuild/buf/releases/download/v${BUF_VERSION}/buf-Linux-x86_64" -o "$HOME/.local/bin/buf"
+          chmod +x "$HOME/.local/bin/buf"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Lint
+        run: buf lint
+      - name: Format
+        run: buf format --diff --exit-code
+      - name: Compile
+        run: buf build -o /dev/null
+
   python:
     needs: changes
     if: needs.changes.outputs.python == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        service: [legacy]
+        service: [legacy, common]
     defaults:
       run:
         working-directory: services/${{ matrix.service }}
@@ -59,6 +84,9 @@ jobs:
         with:
           version: "0.13.7"
           enable-cache: true
+      - name: Generate Protobuf code
+        working-directory: .
+        run: bash scripts/gen_proto.sh
       - name: Install
         run: uv sync --frozen --python 3.12
       - name: Typecheck
@@ -71,7 +99,7 @@ jobs:
   # rename the required check.
   python-ok:
     if: always()
-    needs: [changes, lint, python]
+    needs: [changes, lint, proto, python]
     runs-on: ubuntu-latest
     steps:
       - name: All Python jobs passed or were skipped

@@ -1,0 +1,112 @@
+syntax = "proto3";
+
+package marketdata.v1;
+
+// Every message on the bus and on the browser WebSocket is one Envelope.
+// Timestamps are Unix nanoseconds, stamped as the message crosses each hop,
+// so latency can be measured per hop.
+message Envelope {
+  // Source of the data: "kraken", "binance", "coinbase", "alpaca", "sim" or "replay".
+  string venue = 1;
+  // Normalized instrument name, for example "BTC-USD".
+  string symbol = 2;
+  // Gapless sequence number per venue and symbol. A jump means a message was lost.
+  uint64 seq = 3;
+  // Time the venue says the event happened; 0 when the venue sends none.
+  int64 ts_exch_ns = 4;
+  // Time the adapter received it.
+  int64 ts_recv_ns = 5;
+  // Time just before it was published to the bus.
+  int64 ts_bus_ns = 6;
+  // Time the gateway sent it to a browser.
+  int64 ts_gw_send_ns = 7;
+
+  oneof payload {
+    Snapshot snapshot = 10;
+    Delta delta = 11;
+    Trade trade = 12;
+    BookReset reset = 13;
+    Analytics analytics = 14;
+  }
+}
+
+// Prices and sizes travel as integers so no floating-point rounding crosses the wire:
+// price = price_ticks / 10^price_scale and size = size_lots / 10^size_scale.
+message Level {
+  int64 price_ticks = 1;
+  int64 size_lots = 2;
+}
+
+enum Side {
+  SIDE_UNSPECIFIED = 0;
+  SIDE_BID = 1;
+  SIDE_ASK = 2;
+}
+
+// Full book state. Consumers start from a Snapshot, then apply Deltas with higher seq.
+message Snapshot {
+  int32 price_scale = 1;
+  int32 size_scale = 2;
+  // Best price first on both sides.
+  repeated Level bids = 3;
+  repeated Level asks = 4;
+  // Venue checksum of the top levels after this state, when the venue provides one.
+  uint32 checksum = 5;
+}
+
+// One price level changed. A size of 0 removes the level.
+message LevelUpdate {
+  Side side = 1;
+  int64 price_ticks = 2;
+  int64 size_lots = 3;
+}
+
+message Delta {
+  repeated LevelUpdate updates = 1;
+  // Venue checksum of the top levels after applying this delta, when provided.
+  uint32 checksum = 2;
+}
+
+enum Aggressor {
+  AGGRESSOR_UNSPECIFIED = 0;
+  AGGRESSOR_BUY = 1;
+  AGGRESSOR_SELL = 2;
+}
+
+message Trade {
+  string trade_id = 1;
+  int64 price_ticks = 2;
+  int64 size_lots = 3;
+  Aggressor aggressor = 4;
+}
+
+enum ResetReason {
+  RESET_REASON_UNSPECIFIED = 0;
+  RESET_REASON_SEQUENCE_GAP = 1;
+  RESET_REASON_CHECKSUM_MISMATCH = 2;
+  RESET_REASON_RECONNECT = 3;
+}
+
+// The local book was thrown away; wait for a new Snapshot.
+message BookReset {
+  ResetReason reason = 1;
+  uint64 expected_seq = 2;
+  uint64 received_seq = 3;
+}
+
+// Derived metrics, published by the analytics service. Floating point is fine here:
+// these are outputs for display, not state that gets replayed.
+message Analytics {
+  double mid = 1;
+  double microprice = 2;
+  double spread_bps = 3;
+  double imbalance_l1 = 4;
+  double imbalance_l5 = 5;
+  double depth_10bps_bid = 6;
+  double depth_10bps_ask = 7;
+  double realized_vol_1s = 8;
+  double realized_vol_10s = 9;
+  double realized_vol_60s = 10;
+  double vwap_session = 11;
+  double twap_60s = 12;
+}
