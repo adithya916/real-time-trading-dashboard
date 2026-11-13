@@ -6,7 +6,7 @@ class MarketAnalytics:
     def __init__(self, window_size=20):
         self.window_size = window_size
         # Log returns over the last `window_size` ticks
-        self.returns = deque(maxlen=window_size)
+        self.returns: deque[float] = deque(maxlen=window_size)
         self.last_price = None
         # Running totals since startup, for session VWAP
         self.cum_price_volume = 0.0

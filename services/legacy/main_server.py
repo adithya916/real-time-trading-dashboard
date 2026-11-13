@@ -26,7 +26,7 @@ CORS_ORIGINS = [
 ]
 CHANNEL_PREFIX = "market_data_feed"
 MAX_PUBLISH_BATCH = 500
-redis_client = None
+redis_client: redis.Redis | None = None
 
 # Global State
 analytics_engine: dict[str, MarketAnalytics] = {s: MarketAnalytics() for s in SYMBOLS}
@@ -40,9 +40,10 @@ def channel_for(symbol: str) -> str:
 async def lifespan(app: FastAPI):
     # Startup
     global redis_client
-    redis_client = redis.from_url(REDIS_URL, decode_responses=True)
+    client = redis.from_url(REDIS_URL, decode_responses=True)
+    redis_client = client
 
-    queue = asyncio.Queue(maxsize=10000)
+    queue: asyncio.Queue[dict] = asyncio.Queue(maxsize=10000)
     simulator = MarketDataSimulator()
     tasks = [
         asyncio.create_task(simulator.run_simulation(queue)),
@@ -55,7 +56,7 @@ async def lifespan(app: FastAPI):
     for task in tasks:
         task.cancel()
     await asyncio.gather(*tasks, return_exceptions=True)
-    await redis_client.aclose()
+    await client.aclose()
 
 
 app = FastAPI(lifespan=lifespan)
@@ -76,7 +77,7 @@ async def data_pipeline(queue: asyncio.Queue):
     """
     logger.info("Data pipeline started.")
 
-    latency_metrics = []
+    latency_metrics: list[float] = []
     last_log_time = time.time()
     retry_delay = 0.1
 
@@ -107,6 +108,7 @@ async def data_pipeline(queue: asyncio.Queue):
 
         # 3. Broadcast (ticks are dropped if Redis is unavailable; this is a live feed)
         try:
+            assert redis_client is not None, "lifespan creates the client before any task runs"
             pipe = redis_client.pipeline(transaction=False)
             for channel, message in messages:
                 pipe.publish(channel, message)
@@ -143,6 +145,7 @@ async def websocket_endpoint(websocket: WebSocket, symbol: str):
 
     await websocket.accept()
 
+    assert redis_client is not None, "lifespan creates the client before serving"
     pubsub = redis_client.pubsub()
     await pubsub.subscribe(channel_for(symbol))
 
