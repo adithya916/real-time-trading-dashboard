@@ -1,7 +1,8 @@
 """Record a venue's raw frames while an adapter runs, and load them back for tests.
 
-A recording is gzipped JSON lines, one per received frame: {"recv_ns": ..., "frame": "..."}.
-Replaying the frames through a fake socket exercises the adapter on real venue data.
+A recording is gzipped JSON lines: {"recv_ns": ..., "frame": "..."} per received WebSocket frame,
+and {"recv_ns": ..., "rest": "<symbol>", "body": {...}} per REST snapshot (Binance needs those).
+Replaying them through fakes exercises an adapter on real venue data.
 """
 
 from __future__ import annotations
@@ -9,10 +10,10 @@ from __future__ import annotations
 import gzip
 import json
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import IO
+from typing import IO, Any
 
 from ingest.adapters.base import Connector, Socket
 
@@ -45,10 +46,32 @@ class RecordingConnector:
         async with self._inner(url) as socket:
             yield _RecordingSocket(socket, self._sink)
 
+    def fetcher(
+        self, inner: Callable[[str], Awaitable[dict[str, Any]]]
+    ) -> Callable[[str], Awaitable[dict[str, Any]]]:
+        """Wrap a REST snapshot fetcher so its responses land in the same recording."""
+
+        async def fetch(symbol: str) -> dict[str, Any]:
+            body = await inner(symbol)
+            line = {"recv_ns": time.time_ns(), "rest": symbol, "body": body}
+            self._sink.write(json.dumps(line) + "\n")
+            return body
+
+        return fetch
+
     def close(self) -> None:
         self._sink.close()
 
 
-def load_frames(path: Path) -> list[str]:
+def _lines(path: Path) -> list[dict[str, Any]]:
     with gzip.open(path, "rt", encoding="utf-8") as f:
-        return [json.loads(line)["frame"] for line in f if line.strip()]
+        return [json.loads(line) for line in f if line.strip()]
+
+
+def load_frames(path: Path) -> list[str]:
+    return [line["frame"] for line in _lines(path) if "frame" in line]
+
+
+def load_rest(path: Path) -> list[dict[str, Any]]:
+    """REST snapshot bodies in the order they were fetched."""
+    return [line["body"] for line in _lines(path) if "rest" in line]

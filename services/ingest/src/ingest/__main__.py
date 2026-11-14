@@ -13,6 +13,7 @@ import time
 from collections import Counter
 from contextlib import aclosing
 from pathlib import Path
+from typing import Any
 
 from ingest.adapters.base import Connector, supervise, websocket_connect
 from ingest.adapters.registry import ADAPTERS, load
@@ -23,7 +24,13 @@ from mdcommon.schema import ResetReason
 async def run(venue: str, symbols: list[str], seconds: float, record: Path | None) -> int:
     recorder = RecordingConnector(websocket_connect, record) if record else None
     connect: Connector = recorder if recorder else websocket_connect
-    adapter = load(venue)(symbols, connect=connect)
+    adapter_class = load(venue)
+    extra: dict[str, Any] = {}
+    default_fetch = getattr(adapter_class, "default_fetch", None)
+    if recorder and default_fetch:
+        # Venues that sync from a REST snapshot get it recorded alongside the frames.
+        extra["fetch"] = recorder.fetcher(default_fetch)
+    adapter = adapter_class(symbols, connect=connect, **extra)
     counts: Counter[str] = Counter()
     resets = 0
     start = time.monotonic()
