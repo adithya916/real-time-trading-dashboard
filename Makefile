@@ -27,6 +27,7 @@ lint: proto ## Lint Python and the web app
 	cd services/legacy && uv run mypy .
 	cd services/common && uv run mypy .
 	cd services/ingest && uv run mypy .
+	cd services/recorder && uv run mypy .
 	npx -y @bufbuild/buf@1.47.2 lint
 	cd web && npm run lint && npm run format:check
 
@@ -34,6 +35,7 @@ test: proto ## Run the test suites
 	cd services/legacy && uv run pytest -q
 	cd services/common && uv run pytest -q
 	cd services/ingest && uv run pytest -q
+	cd services/recorder && uv run pytest -q
 
 proto: ## Generate Python code from proto/ (not committed)
 	bash scripts/gen_proto.sh
