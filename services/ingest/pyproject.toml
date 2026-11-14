@@ -15,6 +15,7 @@ mdcommon = { path = "../common", editable = true }
 dev = [
     "pytest==8.3.4",
     "pytest-timeout==2.3.1",
+    "hypothesis==6.122.3",
     "mypy==1.14.1",
     "types-protobuf==5.29.1.20241207",
 ]
