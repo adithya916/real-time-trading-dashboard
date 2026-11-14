@@ -6,7 +6,7 @@ import asyncio
 import logging
 import time
 from abc import ABC, abstractmethod
-from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, Sequence
+from collections.abc import AsyncGenerator, Awaitable, Callable, Sequence
 from contextlib import AbstractAsyncContextManager
 from typing import ClassVar, Protocol, TypeAlias
 
@@ -110,7 +110,7 @@ async def supervise(
     max_restarts: int | None = None,
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     monotonic: Callable[[], float] = time.monotonic,
-) -> AsyncIterator[Envelope]:
+) -> AsyncGenerator[Envelope, None]:
     """Run adapter.stream() forever, reconnecting with exponential backoff.
 
     Venues drop day-old sockets (Binance at 24 h), so sessions are also rotated before that.
