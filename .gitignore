@@ -23,3 +23,6 @@ dist/
 # Generated Protobuf code (scripts/gen_proto.sh)
 services/common/src/mdcommon/gen/
 .hypothesis/
+
+# Recorded market data (python -m recorder)
+data/
