@@ -12,6 +12,7 @@ from ingest.adapters.base import FeedAdapter
 
 ADAPTERS: dict[str, str] = {
     "kraken": "ingest.adapters.kraken:KrakenAdapter",
+    "binance": "ingest.adapters.binance:BinanceAdapter",
 }
 
 
