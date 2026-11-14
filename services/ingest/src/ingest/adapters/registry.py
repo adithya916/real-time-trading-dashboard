@@ -10,7 +10,9 @@ from importlib import import_module
 
 from ingest.adapters.base import FeedAdapter
 
-ADAPTERS: dict[str, str] = {}
+ADAPTERS: dict[str, str] = {
+    "kraken": "ingest.adapters.kraken:KrakenAdapter",
+}
 
 
 def load(name: str) -> type[FeedAdapter]:
