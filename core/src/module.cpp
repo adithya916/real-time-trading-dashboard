@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "bookcore/l2book.hpp"
+#include "bookcore/matching_engine.hpp"
 #include "bookcore/version.hpp"
 
 namespace py = pybind11;
@@ -62,4 +63,66 @@ PYBIND11_MODULE(_bookcore, m) {
 
   m.def("kraken_checksum", &bookcore::kraken_checksum, py::arg("book"),
         "Kraken's CRC32 of the top 10 asks then bids.");
+
+  using bookcore::Event;
+  using bookcore::EventType;
+  using bookcore::MatchingEngine;
+  using bookcore::OrderType;
+  using bookcore::RejectReason;
+
+  py::enum_<OrderType>(m, "OrderType")
+      .value("LIMIT", OrderType::Limit)
+      .value("MARKET", OrderType::Market)
+      .value("IOC", OrderType::Ioc);
+  py::enum_<EventType>(m, "EventType")
+      .value("ACCEPTED", EventType::Accepted)
+      .value("TRADE", EventType::Trade)
+      .value("CANCELLED", EventType::Cancelled)
+      .value("REJECTED", EventType::Rejected);
+  py::enum_<RejectReason>(m, "RejectReason")
+      .value("NONE", RejectReason::None)
+      .value("DUPLICATE_ID", RejectReason::DuplicateId)
+      .value("INVALID_SIZE", RejectReason::InvalidSize)
+      .value("INVALID_PRICE", RejectReason::InvalidPrice)
+      .value("UNKNOWN_ORDER", RejectReason::UnknownOrder);
+
+  py::class_<Event>(m, "Event")
+      .def_readonly("seq", &Event::seq)
+      .def_readonly("type", &Event::type)
+      .def_readonly("order", &Event::order)
+      .def_readonly("maker", &Event::maker)
+      .def_readonly("side", &Event::side)
+      .def_readonly("price", &Event::price)
+      .def_readonly("size", &Event::size)
+      .def_readonly("reason", &Event::reason)
+      .def("__repr__", [](const Event& e) {
+        return "Event(seq=" + std::to_string(e.seq) +
+               ", type=" + std::to_string(static_cast<int>(e.type)) +
+               ", order=" + std::to_string(e.order) + ", price=" + std::to_string(e.price) +
+               ", size=" + std::to_string(e.size) + ")";
+      });
+
+  py::class_<MatchingEngine>(m, "MatchingEngine", "Limit order book with price-time priority.")
+      .def(py::init<>())
+      .def("submit", &MatchingEngine::submit, py::arg("order"), py::arg("side"), py::arg("type"),
+           py::arg("price"), py::arg("size"))
+      .def("cancel", &MatchingEngine::cancel, py::arg("order"))
+      .def(
+          "depth",
+          [](const MatchingEngine& engine, Side side, std::size_t n) {
+            return to_tuples(engine.depth(side, n));
+          },
+          py::arg("side"), py::arg("n"), "Aggregated levels, best first.")
+      .def(
+          "best",
+          [](const MatchingEngine& engine, Side side) -> std::optional<PyLevel> {
+            auto level = engine.best(side);
+            if (!level) {
+              return std::nullopt;
+            }
+            return PyLevel{level->price, level->size};
+          },
+          py::arg("side"))
+      .def("resting_orders", &MatchingEngine::resting_orders)
+      .def("last_seq", &MatchingEngine::last_seq);
 }
