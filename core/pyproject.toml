@@ -11,7 +11,15 @@ requires-python = ">=3.10,<3.13"
 [dependency-groups]
 dev = [
     "pytest==8.3.4",
+    "hypothesis==6.122.3",
+    # The differential tests compare against the reference book and replay recordings.
+    "ingest",
+    "mdcommon",
 ]
+
+[tool.uv.sources]
+ingest = { path = "../services/ingest", editable = true }
+mdcommon = { path = "../services/common", editable = true }
 
 [tool.scikit-build]
 minimum-version = "0.10"
