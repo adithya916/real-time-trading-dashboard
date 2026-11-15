@@ -21,3 +21,4 @@
 ## C++ order book and matching engine
 
 - `core/` (`bookcore`): C++20 static library built with CMake and warnings as errors, a GoogleTest suite, and pybind11 bindings packaged with scikit-build-core. `ci-cpp` checks clang-format, builds and tests in Release and under AddressSanitizer + UBSan, and imports the Python extension.
+- `bookcore::L2Book`: each side a sorted array stored worst-first (best price at the back, so top-of-book updates move few elements), binary-search lookups, best/top/crossed/truncate, and Kraken's checksum computed from the integer tick values. Exposed to Python as `bookcore.L2Book`.
