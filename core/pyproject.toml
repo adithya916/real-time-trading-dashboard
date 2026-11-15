@@ -1,0 +1,26 @@
+[build-system]
+requires = ["scikit-build-core==0.10.7", "pybind11==2.13.6"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "bookcore"
+version = "0.1.0"
+description = "C++ L2 order book and matching engine with Python bindings."
+requires-python = ">=3.10,<3.13"
+
+[dependency-groups]
+dev = [
+    "pytest==8.3.4",
+]
+
+[tool.scikit-build]
+minimum-version = "0.10"
+cmake.version = ">=3.25"
+build-dir = "build/{wheel_tag}"
+wheel.packages = ["python/bookcore"]
+
+[tool.scikit-build.cmake.define]
+BOOKCORE_TESTS = "OFF"
+
+[tool.pytest.ini_options]
+testpaths = ["tests/python"]

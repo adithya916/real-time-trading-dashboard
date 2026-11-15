@@ -20,6 +20,12 @@ repos:
         args: [--fix]
       - id: ruff-format
 
+  - repo: https://github.com/pre-commit/mirrors-clang-format
+    rev: v19.1.5
+    hooks:
+      - id: clang-format
+        types_or: [c++, c]
+
   # Uses the Prettier version pinned in web/package.json, the same one CI runs.
   - repo: local
     hooks:

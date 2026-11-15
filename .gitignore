@@ -26,3 +26,7 @@ services/common/src/mdcommon/gen/
 
 # Recorded market data (python -m recorder)
 data/
+
+# C++ build trees
+core/build/
+core/build-*/
