@@ -1,0 +1,95 @@
+name: ci-cpp
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      cpp: ${{ steps.filter.outputs.cpp }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            cpp:
+              - 'core/**'
+              - '.clang-format'
+              - '.github/workflows/ci-cpp.yml'
+
+  format:
+    needs: changes
+    if: needs.changes.outputs.cpp == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.13.7"
+      - name: clang-format
+        run: find core \( -name '*.cpp' -o -name '*.hpp' \) -print0 | xargs -0 uvx clang-format@19.1.5 --dry-run --Werror
+
+  build:
+    needs: changes
+    if: needs.changes.outputs.cpp == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    name: build (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: release
+            build_type: Release
+            sanitize: "OFF"
+          - name: asan-ubsan
+            build_type: Debug
+            sanitize: "ON"
+    env:
+      ASAN_OPTIONS: halt_on_error=1:detect_leaks=1
+      UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S core -B build -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DBOOKCORE_SANITIZE=${{ matrix.sanitize }} -DBOOKCORE_TESTS=ON
+      - name: Build
+        run: cmake --build build -j
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  python:
+    needs: changes
+    if: needs.changes.outputs.cpp == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: core
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.13.7"
+          enable-cache: true
+      - name: Build and install the extension
+        run: uv sync --frozen --no-editable --python 3.12
+      - name: Test
+        run: uv run --no-sync pytest -q
+
+  cpp-ok:
+    if: always()
+    needs: [changes, format, build, python]
+    runs-on: ubuntu-latest
+    steps:
+      - name: All C++ jobs passed or were skipped
+        run: |
+          if [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" = "true" ]; then exit 1; fi
