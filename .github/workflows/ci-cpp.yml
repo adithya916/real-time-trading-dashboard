@@ -40,7 +40,8 @@ jobs:
         with:
           version: "0.13.7"
       - name: clang-format
-        run: find core \( -name '*.cpp' -o -name '*.hpp' \) -print0 | xargs -0 uvx clang-format@19.1.5 --dry-run --Werror
+        # Only tracked sources, never CMake's generated files in build trees.
+        run: git ls-files -z 'core/*.cpp' 'core/*.hpp' | xargs -0 uvx clang-format@19.1.5 --dry-run --Werror
 
   build:
     needs: changes

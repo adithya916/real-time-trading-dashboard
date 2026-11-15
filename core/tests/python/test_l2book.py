@@ -38,3 +38,19 @@ def test_large_prices_survive_the_round_trip() -> None:
     book = L2Book()
     book.apply(Side.ASK, 2**62, 2**40)
     assert book.best(Side.ASK) == (2**62, 2**40)
+
+
+def test_apply_many_matches_one_call_per_update() -> None:
+    updates = [(1, 100, 5), (2, 101, 4), (1, 99, 7), (1, 100, 0), (2, 102, 3)]
+    batched, single = L2Book(), L2Book()
+    batched.apply_many(updates)
+    for side, price, size in updates:
+        single.apply(Side.BID if side == 1 else Side.ASK, price, size)
+
+    for side in (Side.BID, Side.ASK):
+        assert batched.top(side, 10) == single.top(side, 10)
+
+
+def test_apply_many_rejects_an_unknown_side() -> None:
+    with pytest.raises(ValueError, match="side must be 1"):
+        L2Book().apply_many([(3, 100, 1)])

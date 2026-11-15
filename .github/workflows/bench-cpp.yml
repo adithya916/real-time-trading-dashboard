@@ -1,0 +1,41 @@
+name: bench-cpp
+
+# Benchmarks the C++ core and compares it with PyBook on the recorded feeds, on a
+# GitHub-hosted runner like the baseline. Trend only: never blocks a merge.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'core/**'
+      - 'bench/cpp/**'
+      - '.github/workflows/bench-cpp.yml'
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.13.7"
+      - name: Generate Protobuf code
+        run: bash scripts/gen_proto.sh
+      - name: Build the benchmark binary
+        run: |
+          cmake -S core -B core/build-bench -DCMAKE_BUILD_TYPE=Release -DBOOKCORE_TESTS=OFF -DBOOKCORE_BENCH=ON
+          cmake --build core/build-bench -j
+      - name: Build and install the extension
+        working-directory: core
+        run: uv sync --frozen --no-editable --python 3.12
+      - name: Run the benchmarks
+        working-directory: core
+        env:
+          BENCH_MACHINE: GitHub Actions ubuntu-latest
+        run: uv run --no-sync python ../bench/cpp/run.py --bench-binary build-bench/bookcore_bench --out ../bench/results/cpp
+      - name: Publish the report on the run page
+        run: cat bench/results/cpp.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cpp-bench-results
+          path: bench/results/cpp.*

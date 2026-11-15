@@ -1,0 +1,50 @@
+{
+  "environment": {
+    "machine": "GitHub Actions ubuntu-latest",
+    "os": "Linux-7.0.0-1016-aws-x86_64-with-glibc2.43",
+    "cpu_count": 4,
+    "python": "3.12.16"
+  },
+  "google_benchmark": [
+    {
+      "name": "BM_L2BookApply",
+      "items_per_s": 32427375.584785562,
+      "time": 30.841142466666977,
+      "unit": "ms"
+    },
+    {
+      "name": "BM_KrakenChecksum",
+      "items_per_s": 1050820.4020676992,
+      "time": 951.7308847635308,
+      "unit": "ns"
+    },
+    {
+      "name": "BM_MatchingEngine",
+      "items_per_s": 9358435.081736961,
+      "time": 53.43561730769208,
+      "unit": "ms"
+    }
+  ],
+  "recorded": [
+    {
+      "stream": "Kraken BTC/USD",
+      "messages": 2131,
+      "updates": 2819,
+      "python_per_s": 13367659.668235889,
+      "cpp_per_update_per_s": 5252791.658152462,
+      "cpp_per_message_per_s": 5630806.315821829,
+      "speedup_per_update": 0.39294774018178347,
+      "speedup_per_message": 0.42122603773356826
+    },
+    {
+      "stream": "Binance BTCUSDT",
+      "messages": 178,
+      "updates": 8517,
+      "python_per_s": 11030117.628177881,
+      "cpp_per_update_per_s": 4091199.0772030833,
+      "cpp_per_message_per_s": 7885769.503247576,
+      "speedup_per_update": 0.370911645289401,
+      "speedup_per_message": 0.7149306806214236
+    }
+  ]
+}
