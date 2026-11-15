@@ -24,6 +24,10 @@ jobs:
               - 'core/**'
               - '.clang-format'
               - '.github/workflows/ci-cpp.yml'
+              # The differential tests replay recordings through the adapters and PyBook.
+              - 'services/ingest/**'
+              - 'services/common/**'
+              - 'proto/**'
 
   format:
     needs: changes
@@ -80,6 +84,9 @@ jobs:
         with:
           version: "0.13.7"
           enable-cache: true
+      - name: Generate Protobuf code
+        working-directory: .
+        run: bash scripts/gen_proto.sh
       - name: Build and install the extension
         run: uv sync --frozen --no-editable --python 3.12
       - name: Test
