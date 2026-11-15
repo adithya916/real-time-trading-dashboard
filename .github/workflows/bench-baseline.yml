@@ -6,8 +6,9 @@ on:
   workflow_dispatch:
   pull_request:
     paths:
-      - 'bench/**'
-      - '!bench/results/**'
+      - 'bench/baseline/**'
+      - 'bench/pyproject.toml'
+      - 'bench/uv.lock'
       - '.github/workflows/bench-baseline.yml'
 
 jobs:
