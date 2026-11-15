@@ -9,6 +9,7 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 option(BOOKCORE_TESTS "Build the GoogleTest suite" ${PROJECT_IS_TOP_LEVEL})
 option(BOOKCORE_SANITIZE "Build with AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
+option(BOOKCORE_BENCH "Build the Google Benchmark suite" OFF)
 
 if(MSVC)
   set(BOOKCORE_WARNINGS /W4 /WX)
@@ -45,6 +46,25 @@ if(BOOKCORE_TESTS)
   target_compile_options(bookcore_tests PRIVATE ${BOOKCORE_WARNINGS})
   include(GoogleTest)
   gtest_discover_tests(bookcore_tests)
+endif()
+
+if(BOOKCORE_BENCH)
+  include(FetchContent)
+  FetchContent_Declare(
+    benchmark
+    GIT_REPOSITORY https://github.com/google/benchmark.git
+    GIT_TAG v1.9.1
+    GIT_SHALLOW TRUE
+    SYSTEM)
+  set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+  set(BENCHMARK_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
+  # Its own -Werror trips on newer compilers (GCC 14 flags an unhandled enum in sysinfo.cc).
+  set(BENCHMARK_ENABLE_WERROR OFF CACHE BOOL "" FORCE)
+  FetchContent_MakeAvailable(benchmark)
+
+  add_executable(bookcore_bench bench/bench_main.cpp)
+  target_link_libraries(bookcore_bench PRIVATE bookcore benchmark::benchmark)
+  target_compile_options(bookcore_bench PRIVATE ${BOOKCORE_WARNINGS})
 endif()
 
 # Set by scikit-build-core when pip/uv builds the Python package.
