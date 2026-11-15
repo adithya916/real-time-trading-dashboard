@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -41,6 +42,20 @@ PYBIND11_MODULE(_bookcore, m) {
       .def(py::init<>())
       .def("apply", &L2Book::apply, py::arg("side"), py::arg("price"), py::arg("size"),
            "Set a level's size; size 0 removes it.")
+      .def(
+          "apply_many",
+          [](L2Book& book,
+             const std::vector<std::tuple<int, std::int64_t, std::int64_t>>& updates) {
+            // One call per message instead of one per level: crossing into C++ costs more than
+            // a single level update, so batching is what makes the C++ book pay off from Python.
+            for (const auto& [side, price, size] : updates) {
+              if (side != 1 && side != 2) {
+                throw std::invalid_argument("side must be 1 (bid) or 2 (ask)");
+              }
+              book.apply(static_cast<Side>(side), price, size);
+            }
+          },
+          py::arg("updates"), "Apply (side, price, size) tuples; side 1 is bid, 2 is ask.")
       .def("clear", &L2Book::clear)
       .def(
           "best",
