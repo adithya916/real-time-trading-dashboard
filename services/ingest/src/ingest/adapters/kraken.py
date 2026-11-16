@@ -4,7 +4,8 @@ Docs: https://docs.kraken.com/api/docs/guides/spot-ws-book-v2
 
 The book channel sends a snapshot, then updates in which a quantity of 0 deletes the level.
 Kraken only maintains `depth` levels per side and does not send deletes for levels pushed past
-it, so the local book is truncated after every message. Each message carries a checksum of the
+it, so the local book is truncated after every message and an explicit delete is published
+for each level dropped, keeping the delta stream self-contained for consumers. Each message carries a checksum of the
 top 10 levels; a mismatch means the local book is wrong, so the adapter emits a BookReset and
 drops the connection, and the supervisor reconnects for a fresh snapshot.
 """
@@ -133,7 +134,11 @@ class KrakenAdapter(FeedAdapter):
                 size = _ticks(level["qty"], inst.size_scale)
                 book.apply(side, price, size)
                 updates.append(LevelUpdate(side=wire_side, price_ticks=price, size_lots=size))
-        book.truncate(DEPTH)
+        # Kraken sends no delete for a level pushed past the depth, so publish one: consumers
+        # applying the deltas as they arrive would otherwise keep stale levels and cross.
+        for side, price in book.truncate(DEPTH):
+            wire_side = Side.SIDE_BID if side == "bid" else Side.SIDE_ASK
+            updates.append(LevelUpdate(side=wire_side, price_ticks=price, size_lots=0))
 
         expected = int(entry["checksum"])
         actual = kraken_checksum(book, inst.price_scale, inst.size_scale)

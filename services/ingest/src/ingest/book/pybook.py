@@ -54,10 +54,21 @@ class PyBook:
         bid, ask = self.best_bid(), self.best_ask()
         return bid is not None and ask is not None and bid[0] >= ask[0]
 
-    def truncate(self, depth: int) -> None:
-        """Keep only the best `depth` levels per side (Kraken stops updating levels past its depth)."""
-        self.bids = dict(self.top("bid", depth))
-        self.asks = dict(self.top("ask", depth))
+    def truncate(self, depth: int) -> list[tuple[BookSide, int]]:
+        """Keep only the best `depth` levels per side; return the (side, price) levels dropped.
+
+        Kraken stops updating levels past its depth without sending deletes for them.
+        """
+        dropped: list[tuple[BookSide, int]] = []
+        for side in ("bid", "ask"):
+            levels = self.bids if side == "bid" else self.asks
+            keep = dict(self.top(side, depth))
+            dropped += [(side, price) for price in levels if price not in keep]
+            if side == "bid":
+                self.bids = keep
+            else:
+                self.asks = keep
+        return dropped
 
     def __len__(self) -> int:
         return len(self.bids) + len(self.asks)

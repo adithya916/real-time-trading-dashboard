@@ -149,3 +149,27 @@ def test_unknown_symbols_are_rejected_up_front() -> None:
 
 def test_timestamps_convert_to_exact_nanoseconds() -> None:
     assert parse_ts_ns("2024-05-01T12:00:00.123456Z") == 1_714_564_800_123_456_000
+
+
+def test_a_consumer_applying_the_deltas_as_published_keeps_krakens_book() -> None:
+    # Kraken drops levels past depth 10 without deletes. The adapter publishes those deletes,
+    # so a consumer that just applies every delta, with no truncation of its own, stays exact.
+    adapter, _, envelopes, _ = replay(FRAMES)
+    consumer: dict[int, dict[int, int]] = {1: {}, 2: {}}
+    for envelope in envelopes:
+        if envelope.HasField("snapshot"):
+            consumer = {
+                1: {lv.price_ticks: lv.size_lots for lv in envelope.snapshot.bids},
+                2: {lv.price_ticks: lv.size_lots for lv in envelope.snapshot.asks},
+            }
+        elif envelope.HasField("delta"):
+            for update in envelope.delta.updates:
+                if update.size_lots:
+                    consumer[update.side][update.price_ticks] = update.size_lots
+                else:
+                    consumer[update.side].pop(update.price_ticks, None)
+            assert len(consumer[1]) <= 10 and len(consumer[2]) <= 10
+            assert max(consumer[1]) < min(consumer[2]), f"crossed at seq {envelope.seq}"
+
+    book = adapter.books["BTC-USD"]
+    assert consumer[1] == book.bids and consumer[2] == book.asks
