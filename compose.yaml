@@ -5,3 +5,4 @@ name: rtd
 include:
   - deploy/compose/redis.yaml
   - deploy/compose/legacy.yaml
+  - deploy/compose/nats.yaml
