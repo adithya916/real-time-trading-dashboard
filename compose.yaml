@@ -8,3 +8,4 @@ include:
   - deploy/compose/nats.yaml
   - deploy/compose/ingest.yaml
   - deploy/compose/analytics.yaml
+  - deploy/compose/gateway.yaml
