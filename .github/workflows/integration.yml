@@ -28,6 +28,7 @@ jobs:
               - 'scripts/bus_smoke.py'
               - 'scripts/ingest_smoke.py'
               - 'scripts/analytics_smoke.py'
+              - 'scripts/gateway_smoke.py'
               - 'proto/**'
               - '.github/workflows/integration.yml'
 
@@ -59,6 +60,8 @@ jobs:
           uv run --project services/ingest --frozen --python 3.12 python scripts/ingest_smoke.py nats://localhost:4222
       - name: Analytics published metrics for the replayed book
         run: uv run --project services/ingest --frozen --python 3.12 python scripts/analytics_smoke.py nats://localhost:4222
+      - name: The gateway serves the replayed book over WebSocket
+        run: uv run --project services/gateway --frozen --python 3.12 python scripts/gateway_smoke.py ws://localhost:8080/ws/kraken/BTC-USD
       - name: Build the ingest image
         run: docker compose --profile feeds build ingest
       - name: Logs on failure
