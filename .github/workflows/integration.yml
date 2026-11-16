@@ -27,6 +27,7 @@ jobs:
               - 'scripts/ws_smoke.py'
               - 'scripts/bus_smoke.py'
               - 'scripts/ingest_smoke.py'
+              - 'scripts/analytics_smoke.py'
               - 'proto/**'
               - '.github/workflows/integration.yml'
 
@@ -56,6 +57,8 @@ jobs:
         run: |
           uv run --project services/ingest --frozen --python 3.12 python -m ingest.service             --bus nats://localhost:4222 --replay services/ingest/tests/fixtures/kraken_btcusd.jsonl.gz kraken:BTC-USD
           uv run --project services/ingest --frozen --python 3.12 python scripts/ingest_smoke.py nats://localhost:4222
+      - name: Analytics published metrics for the replayed book
+        run: uv run --project services/ingest --frozen --python 3.12 python scripts/analytics_smoke.py nats://localhost:4222
       - name: Build the ingest image
         run: docker compose --profile feeds build ingest
       - name: Logs on failure
