@@ -25,3 +25,7 @@
 - Differential tests: the Kraken and Binance recordings and 300 random Hypothesis update streams go through both `PyBook` and the C++ `L2Book`, which must be identical after every event; the C++ checksum must equal the checksum Kraken sent with each message.
 - `bookcore::MatchingEngine`: price-time priority over sorted maps of FIFO price levels, O(1) cancels through an order index, limit / market / IOC orders, and sequence-numbered Accepted / Trade / Cancelled / Rejected events (the same inputs always give the same events). Bound to Python.
 - Benchmarks (`core/bench`, `bench/cpp/run.py`, `bench-cpp` workflow): Google Benchmark for book updates, checksums and the matching engine, plus PyBook vs `bookcore.L2Book` driven from Python on the recorded feeds. On a GitHub runner the C++ book does 32.4M updates/s and the engine 9.4M actions/s, but driven from Python it is slower than PyBook even with `L2Book.apply_many` (one call per message): the gain needs the whole message loop in C++.
+
+## Message bus and gateway
+
+- NATS JetStream in Compose (`deploy/compose/nats.yaml`): stream `MD` on `md.>` (24 h / 1 GB on disk) and KV bucket `snap` for the latest snapshot per symbol. `mdcommon.bus` holds the subject scheme `md.<venue>.<symbol>.{book,trade,analytics}`, `ensure_stream()` and `BusPublisher`. The integration job round-trips a message through the stream and the bucket. Decision record: `docs/adr/001-nats-jetstream.md`.

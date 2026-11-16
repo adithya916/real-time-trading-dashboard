@@ -1,0 +1,18 @@
+services:
+  nats:
+    image: nats:2.10.24-alpine
+    command: ["-c", "/etc/nats/nats.conf"]
+    volumes:
+      - ../nats/nats.conf:/etc/nats/nats.conf:ro
+      - nats-data:/data
+    ports:
+      - "${NATS_PORT:-4222}:4222"
+      - "${NATS_MONITOR_PORT:-8222}:8222"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8222/healthz?js-enabled-only=true"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+
+volumes:
+  nats-data:
