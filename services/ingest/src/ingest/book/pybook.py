@@ -11,6 +11,9 @@ from __future__ import annotations
 
 from typing import Literal
 
+from mdcommon.schema import Level as WireLevel
+from mdcommon.schema import Snapshot
+
 BookSide = Literal["bid", "ask"]
 Level = tuple[int, int]
 
@@ -51,10 +54,32 @@ class PyBook:
         bid, ask = self.best_bid(), self.best_ask()
         return bid is not None and ask is not None and bid[0] >= ask[0]
 
-    def truncate(self, depth: int) -> None:
-        """Keep only the best `depth` levels per side (Kraken stops updating levels past its depth)."""
-        self.bids = dict(self.top("bid", depth))
-        self.asks = dict(self.top("ask", depth))
+    def truncate(self, depth: int) -> list[tuple[BookSide, int]]:
+        """Keep only the best `depth` levels per side; return the (side, price) levels dropped.
+
+        Kraken stops updating levels past its depth without sending deletes for them.
+        """
+        dropped: list[tuple[BookSide, int]] = []
+        for side in ("bid", "ask"):
+            levels = self.bids if side == "bid" else self.asks
+            keep = dict(self.top(side, depth))
+            dropped += [(side, price) for price in levels if price not in keep]
+            if side == "bid":
+                self.bids = keep
+            else:
+                self.asks = keep
+        return dropped
 
     def __len__(self) -> int:
         return len(self.bids) + len(self.asks)
+
+
+def to_snapshot(book: PyBook, price_scale: int, size_scale: int, checksum: int = 0) -> Snapshot:
+    """The whole book as a marketdata.v1 Snapshot, best levels first."""
+    return Snapshot(
+        price_scale=price_scale,
+        size_scale=size_scale,
+        bids=[WireLevel(price_ticks=p, size_lots=q) for p, q in book.top("bid")],
+        asks=[WireLevel(price_ticks=p, size_lots=q) for p, q in book.top("ask")],
+        checksum=checksum,
+    )

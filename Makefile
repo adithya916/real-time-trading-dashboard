@@ -6,8 +6,8 @@ COMPOSE ?= docker compose
 help: ## List targets
 	@grep -E '^[a-z-]+:.*##' Makefile | sed 's/:.*##/ -/'
 
-up: ## Build and start the stack, wait until healthy
-	$(COMPOSE) up -d --build --wait
+up: ## Build and start the stack with live feeds, wait until healthy
+	$(COMPOSE) --profile feeds up -d --build --wait
 
 down: ## Stop the stack
 	$(COMPOSE) down

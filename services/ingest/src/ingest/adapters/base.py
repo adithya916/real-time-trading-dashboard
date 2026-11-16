@@ -88,6 +88,17 @@ class FeedAdapter(ABC):
         getattr(envelope, _PAYLOAD_FIELD[type(payload)]).CopyFrom(payload)
         return envelope
 
+    def book_snapshot(self, symbol: str) -> Snapshot | None:
+        """The current book as a Snapshot while it is in sync, otherwise None.
+
+        It reflects every envelope up to last_seq(symbol), so a consumer can start from it
+        and apply the stream from the next seq.
+        """
+        return None
+
+    def last_seq(self, symbol: str) -> int:
+        return self._seq[symbol]
+
     def reset(
         self,
         symbol: str,

@@ -4,7 +4,8 @@ Docs: https://docs.kraken.com/api/docs/guides/spot-ws-book-v2
 
 The book channel sends a snapshot, then updates in which a quantity of 0 deletes the level.
 Kraken only maintains `depth` levels per side and does not send deletes for levels pushed past
-it, so the local book is truncated after every message. Each message carries a checksum of the
+it, so the local book is truncated after every message and an explicit delete is published
+for each level dropped, keeping the delta stream self-contained for consumers. Each message carries a checksum of the
 top 10 levels; a mismatch means the local book is wrong, so the adapter emits a BookReset and
 drops the connection, and the supervisor reconnects for a fresh snapshot.
 """
@@ -20,12 +21,11 @@ from typing import Any
 
 from ingest.adapters.base import AdapterError, FeedAdapter
 from ingest.book.checksum import kraken_checksum
-from ingest.book.pybook import BookSide, PyBook
+from ingest.book.pybook import BookSide, PyBook, to_snapshot
 from mdcommon.schema import (
     Aggressor,
     Delta,
     Envelope,
-    Level,
     LevelUpdate,
     ResetReason,
     Side,
@@ -134,7 +134,11 @@ class KrakenAdapter(FeedAdapter):
                 size = _ticks(level["qty"], inst.size_scale)
                 book.apply(side, price, size)
                 updates.append(LevelUpdate(side=wire_side, price_ticks=price, size_lots=size))
-        book.truncate(DEPTH)
+        # Kraken sends no delete for a level pushed past the depth, so publish one: consumers
+        # applying the deltas as they arrive would otherwise keep stale levels and cross.
+        for side, price in book.truncate(DEPTH):
+            wire_side = Side.SIDE_BID if side == "bid" else Side.SIDE_ASK
+            updates.append(LevelUpdate(side=wire_side, price_ticks=price, size_lots=0))
 
         expected = int(entry["checksum"])
         actual = kraken_checksum(book, inst.price_scale, inst.size_scale)
@@ -143,16 +147,18 @@ class KrakenAdapter(FeedAdapter):
             raise AdapterError(f"{symbol} checksum mismatch: Kraken {expected}, local {actual}")
 
         if kind == "snapshot":
-            snapshot = Snapshot(
-                price_scale=inst.price_scale,
-                size_scale=inst.size_scale,
-                bids=[Level(price_ticks=p, size_lots=q) for p, q in book.top("bid")],
-                asks=[Level(price_ticks=p, size_lots=q) for p, q in book.top("ask")],
-                checksum=expected,
-            )
+            snapshot = to_snapshot(book, inst.price_scale, inst.size_scale, expected)
             yield self.wrap(symbol, snapshot, ts_exch)
         else:
             yield self.wrap(symbol, Delta(updates=updates, checksum=expected), ts_exch)
+
+    def book_snapshot(self, symbol: str) -> Snapshot | None:
+        book = self.books.get(symbol)
+        if book is None:
+            return None
+        inst = INSTRUMENTS[symbol]
+        checksum = kraken_checksum(book, inst.price_scale, inst.size_scale)
+        return to_snapshot(book, inst.price_scale, inst.size_scale, checksum)
 
     def _trade(self, entry: dict[str, Any]) -> Envelope:
         symbol = self._by_venue_symbol[entry["symbol"]]

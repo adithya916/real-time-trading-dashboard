@@ -29,3 +29,4 @@
 ## Message bus and gateway
 
 - NATS JetStream in Compose (`deploy/compose/nats.yaml`): stream `MD` on `md.>` (24 h / 1 GB on disk) and KV bucket `snap` for the latest snapshot per symbol. `mdcommon.bus` holds the subject scheme `md.<venue>.<symbol>.{book,trade,analytics}`, `ensure_stream()` and `BusPublisher`. The integration job round-trips a message through the stream and the bucket. Decision record: `docs/adr/001-nats-jetstream.md`.
+- Ingest publishes to the bus (`python -m ingest.service`): every envelope stamped with `ts_bus_ns`, snapshots plus a once-a-second refresh of each in-sync book into the `snap` bucket at the seq of its last envelope. `--replay` plays a recording through the real adapter. The live container runs with `docker compose --profile feeds up`.

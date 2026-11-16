@@ -1,0 +1,12 @@
+services:
+  ingest:
+    # Live exchange feeds, so it only starts with: docker compose --profile feeds up
+    profiles: ["feeds"]
+    build:
+      context: ../..
+      dockerfile: services/ingest/Dockerfile
+    command: ["--bus", "nats://nats:4222", "kraken:BTC-USD,ETH-USD"]
+    restart: unless-stopped
+    depends_on:
+      nats:
+        condition: service_healthy
