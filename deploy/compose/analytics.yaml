@@ -1,0 +1,9 @@
+services:
+  analytics:
+    build:
+      context: ../..
+      dockerfile: services/analytics/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      nats:
+        condition: service_healthy
