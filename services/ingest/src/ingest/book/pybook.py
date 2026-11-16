@@ -11,6 +11,9 @@ from __future__ import annotations
 
 from typing import Literal
 
+from mdcommon.schema import Level as WireLevel
+from mdcommon.schema import Snapshot
+
 BookSide = Literal["bid", "ask"]
 Level = tuple[int, int]
 
@@ -58,3 +61,14 @@ class PyBook:
 
     def __len__(self) -> int:
         return len(self.bids) + len(self.asks)
+
+
+def to_snapshot(book: PyBook, price_scale: int, size_scale: int, checksum: int = 0) -> Snapshot:
+    """The whole book as a marketdata.v1 Snapshot, best levels first."""
+    return Snapshot(
+        price_scale=price_scale,
+        size_scale=size_scale,
+        bids=[WireLevel(price_ticks=p, size_lots=q) for p, q in book.top("bid")],
+        asks=[WireLevel(price_ticks=p, size_lots=q) for p, q in book.top("ask")],
+        checksum=checksum,
+    )

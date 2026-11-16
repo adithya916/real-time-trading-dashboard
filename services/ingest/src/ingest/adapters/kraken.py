@@ -20,12 +20,11 @@ from typing import Any
 
 from ingest.adapters.base import AdapterError, FeedAdapter
 from ingest.book.checksum import kraken_checksum
-from ingest.book.pybook import BookSide, PyBook
+from ingest.book.pybook import BookSide, PyBook, to_snapshot
 from mdcommon.schema import (
     Aggressor,
     Delta,
     Envelope,
-    Level,
     LevelUpdate,
     ResetReason,
     Side,
@@ -143,16 +142,18 @@ class KrakenAdapter(FeedAdapter):
             raise AdapterError(f"{symbol} checksum mismatch: Kraken {expected}, local {actual}")
 
         if kind == "snapshot":
-            snapshot = Snapshot(
-                price_scale=inst.price_scale,
-                size_scale=inst.size_scale,
-                bids=[Level(price_ticks=p, size_lots=q) for p, q in book.top("bid")],
-                asks=[Level(price_ticks=p, size_lots=q) for p, q in book.top("ask")],
-                checksum=expected,
-            )
+            snapshot = to_snapshot(book, inst.price_scale, inst.size_scale, expected)
             yield self.wrap(symbol, snapshot, ts_exch)
         else:
             yield self.wrap(symbol, Delta(updates=updates, checksum=expected), ts_exch)
+
+    def book_snapshot(self, symbol: str) -> Snapshot | None:
+        book = self.books.get(symbol)
+        if book is None:
+            return None
+        inst = INSTRUMENTS[symbol]
+        checksum = kraken_checksum(book, inst.price_scale, inst.size_scale)
+        return to_snapshot(book, inst.price_scale, inst.size_scale, checksum)
 
     def _trade(self, entry: dict[str, Any]) -> Envelope:
         symbol = self._by_venue_symbol[entry["symbol"]]

@@ -26,12 +26,11 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ingest.adapters.base import AdapterError, FeedAdapter
-from ingest.book.pybook import BookSide, PyBook
+from ingest.book.pybook import BookSide, PyBook, to_snapshot
 from mdcommon.schema import (
     Aggressor,
     Delta,
     Envelope,
-    Level,
     LevelUpdate,
     ResetReason,
     Side,
@@ -179,15 +178,7 @@ class BinanceAdapter(FeedAdapter):
                 )
         state.snapshot_id = int(body["lastUpdateId"])
         state.last_u = None
-        return self.wrap(
-            symbol,
-            Snapshot(
-                price_scale=inst.price_scale,
-                size_scale=inst.size_scale,
-                bids=[Level(price_ticks=p, size_lots=q) for p, q in state.book.top("bid")],
-                asks=[Level(price_ticks=p, size_lots=q) for p, q in state.book.top("ask")],
-            ),
-        )
+        return self.wrap(symbol, to_snapshot(state.book, inst.price_scale, inst.size_scale))
 
     def _apply(self, symbol: str, state: _SymbolState, event: dict[str, Any]) -> Envelope:
         inst = INSTRUMENTS[symbol]
@@ -202,6 +193,13 @@ class BinanceAdapter(FeedAdapter):
                 )
         state.last_u = int(event["u"])
         return self.wrap(symbol, Delta(updates=updates), int(event["E"]) * 1_000_000)
+
+    def book_snapshot(self, symbol: str) -> Snapshot | None:
+        state = self.states.get(symbol)
+        if state is None or state.last_u is None:
+            return None  # not synced yet, or resyncing after a gap
+        inst = INSTRUMENTS[symbol]
+        return to_snapshot(state.book, inst.price_scale, inst.size_scale)
 
     def _trade(self, event: dict[str, Any]) -> Envelope:
         symbol = self._by_venue_symbol[event["s"]]
