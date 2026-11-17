@@ -25,6 +25,16 @@ export interface Metrics {
   ts: number; // ms
 }
 
+// One-second OHLCV built from trades; time is Unix seconds.
+export interface Candle {
+  time: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
 // What the page renders, posted once per animation frame.
 export interface MarketView {
   connected: boolean;
@@ -34,11 +44,13 @@ export interface MarketView {
   trades: TradePrint[]; // newest first
   metrics: Metrics | null;
   metricsHistory: Metrics[]; // oldest first
+  candles: Candle[]; // oldest first
   framesPerSecond: number;
 }
 
 const TRADES_KEPT = 60;
 const METRICS_KEPT = 600; // 60 s at 10 Hz
+const CANDLES_KEPT = 900; // 15 minutes of one-second candles
 
 export class MarketState {
   private bids = new Map<number, number>(); // ticks -> lots
@@ -50,6 +62,7 @@ export class MarketState {
   seq = 0;
   trades: TradePrint[] = [];
   metricsHistory: Metrics[] = [];
+  candles: Candle[] = [];
   private frameTimes: number[] = [];
 
   apply(bytes: Uint8Array, nowMs: number): void {
@@ -92,6 +105,7 @@ export class MarketState {
           ts: Number(envelope.tsExchNs / 1_000_000n) || nowMs,
         });
         this.trades.length = Math.min(this.trades.length, TRADES_KEPT);
+        this.addToCandle(this.trades[0]!);
         break;
       }
       case 'analytics': {
@@ -116,6 +130,22 @@ export class MarketState {
     }
   }
 
+  private addToCandle(trade: TradePrint): void {
+    const time = Math.floor(trade.ts / 1000);
+    const last = this.candles.at(-1);
+    if (last && last.time === time) {
+      last.high = Math.max(last.high, trade.price);
+      last.low = Math.min(last.low, trade.price);
+      last.close = trade.price;
+      last.volume += trade.size;
+    } else if (!last || time > last.time) {
+      const p = trade.price;
+      this.candles.push({ time, open: p, high: p, low: p, close: p, volume: trade.size });
+      if (this.candles.length > CANDLES_KEPT) this.candles.shift();
+    }
+    // A trade older than the last candle (out-of-order venue timestamp) is left out.
+  }
+
   top(side: 'bid' | 'ask', n: number): Level[] {
     const levels = side === 'bid' ? this.bids : this.asks;
     return [...levels.entries()]
@@ -134,6 +164,7 @@ export class MarketState {
       trades: this.trades,
       metrics: this.metricsHistory.at(-1) ?? null,
       metricsHistory: this.metricsHistory,
+      candles: this.candles,
       framesPerSecond: this.frameTimes.length,
     };
   }

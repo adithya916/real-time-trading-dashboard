@@ -10,6 +10,7 @@ export const EMPTY_VIEW: MarketView = {
   trades: [],
   metrics: null,
   metricsHistory: [],
+  candles: [],
   framesPerSecond: 0,
 };
 

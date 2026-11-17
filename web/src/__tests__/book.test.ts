@@ -132,4 +132,34 @@ describe('MarketState', () => {
     expect(view.metrics).toMatchObject({ mid: 100.1, microprice: 100.12, spreadBps: 1.5 });
     expect(view.framesPerSecond).toBe(1); // the frame at 100 ms is over a second old
   });
+
+  it('builds one-second candles from trades', () => {
+    const state = new MarketState();
+    state.apply(snapshot(1), 0);
+    const trade = (seq: number, price: number, size: number, ms: number) =>
+      state.apply(
+        bytes(
+          seq,
+          {
+            case: 'trade',
+            value: {
+              tradeId: `t${seq}`,
+              priceTicks: BigInt(price),
+              sizeLots: BigInt(size),
+              aggressor: 1,
+            },
+          } as Payload,
+          BigInt(ms) * 1_000_000n,
+        ),
+        0,
+      );
+    trade(2, 1000, 100, 5_000); // 100.0 x 1.0 at 5.000 s
+    trade(3, 1010, 50, 5_400); // 101.0 x 0.5
+    trade(4, 990, 50, 5_900); // 99.0 x 0.5
+    trade(5, 1005, 100, 6_100); // next second
+    expect(state.view(0).candles).toEqual([
+      { time: 5, open: 100, high: 101, low: 99, close: 99, volume: 2 },
+      { time: 6, open: 100.5, high: 100.5, low: 100.5, close: 100.5, volume: 1 },
+    ]);
+  });
 });
