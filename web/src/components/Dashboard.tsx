@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { useMarketData } from '../hooks/useMarketData';
+import { useState, useRef, useEffect } from 'react';
+import { useMarketData, type Level } from '../hooks/useMarketData';
 import {
   LineChart,
   Line,
@@ -18,8 +18,8 @@ const Dashboard = () => {
   const { data, latestSnapshot, isConnected } = useMarketData(selectedSymbol);
 
   // Scalability Test Logic
-  const testConnectionsRef = useRef([]);
-  const [testStats, setTestStats] = useState(null);
+  const testConnectionsRef = useRef<WebSocket[]>([]);
+  const [testStats, setTestStats] = useState<{ open: number; failed: number } | null>(null);
 
   const stopScalabilityTest = () => {
     testConnectionsRef.current.forEach((ws) => ws.close());
@@ -42,7 +42,8 @@ const Dashboard = () => {
   // Close any test connections when the dashboard unmounts
   useEffect(() => () => testConnectionsRef.current.forEach((ws) => ws.close()), []);
 
-  const formatPrice = (value) => (value == null ? '---' : `$${value.toFixed(2)}`);
+  const formatPrice = (value: number | null | undefined) =>
+    value == null ? '---' : `$${value.toFixed(2)}`;
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
@@ -149,7 +150,7 @@ const Dashboard = () => {
             {latestSnapshot?.data.asks
               .slice()
               .reverse()
-              .map((level, i) => (
+              .map((level: Level, i: number) => (
                 <div
                   key={`ask-${i}`}
                   className="flex justify-between items-center bg-red-900/20 p-1 rounded"
@@ -170,7 +171,7 @@ const Dashboard = () => {
             </div>
 
             {/* Bids */}
-            {latestSnapshot?.data.bids.map((level, i) => (
+            {latestSnapshot?.data.bids.map((level: Level, i: number) => (
               <div
                 key={`bid-${i}`}
                 className="flex justify-between items-center bg-green-900/20 p-1 rounded"

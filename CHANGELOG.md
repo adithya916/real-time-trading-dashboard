@@ -33,3 +33,7 @@
 - Kraken deltas now include a delete for every level pushed past depth 10, so consumers can apply them verbatim.
 - `services/analytics`: mirrors every book from the bus and publishes mid, microprice, spread (bps), L1 and L5 imbalance, depth within 10 bps, realized volatility over 1/10/60 s, session VWAP and 60 s TWAP to `md.<venue>.<symbol>.analytics` up to 10 times a second, only when they change. Runs in the default Compose stack.
 - `services/gateway` (port 8080): one bus subscription mirrors every book (gap detection, resync from the snapshot bucket plus buffered envelopes); every 50 ms each changed book becomes one coalesced delta, encoded once and fanned out to all its viewers, with every trade and the latest analytics. New viewers get a snapshot first; a viewer whose queue overflows gets a fresh snapshot instead of its backlog and is disconnected (1013) if still behind after 5 s. Decision record: `docs/adr/002-conflating-gateway.md`.
+
+## Frontend
+
+- The web app is TypeScript (strict, `noUncheckedIndexedAccess`) with typescript-eslint and vitest. `store.ts` is a small external store read through `useSyncExternalStore`, so high-rate data stays out of React state; `panels.ts` is the registry each dashboard view adds itself to with one line. `ci-web` adds typecheck and tests.

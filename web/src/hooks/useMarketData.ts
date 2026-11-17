@@ -5,13 +5,43 @@ const BATCH_INTERVAL_MS = 100;
 const MAX_CHART_POINTS = 100;
 const RECONNECT_DELAY_MS = 2000;
 
-export const useMarketData = (symbol) => {
-  const [data, setData] = useState([]);
-  const [latestSnapshot, setLatestSnapshot] = useState(null);
+export interface Level {
+  price: number;
+  size: number;
+}
+
+// The legacy server's JSON message (services/legacy/main_server.py).
+export interface LegacyMessage {
+  type: 'market_data';
+  symbol: string;
+  data: {
+    symbol: string;
+    price: number;
+    volume: number;
+    timestamp: number;
+    bid: number;
+    ask: number;
+    bids: Level[];
+    asks: Level[];
+  };
+  analytics: { vwap: number; volatility: number };
+  processed_at: number;
+}
+
+export interface ChartPoint {
+  time: string;
+  timestamp: number;
+  vwap: number;
+  price: number;
+}
+
+export const useMarketData = (symbol: string) => {
+  const [data, setData] = useState<ChartPoint[]>([]);
+  const [latestSnapshot, setLatestSnapshot] = useState<LegacyMessage | null>(null);
   const [isConnected, setIsConnected] = useState(false);
 
   // Newest raw message since the last render tick; older ones are dropped without parsing
-  const latestRawRef = useRef(null);
+  const latestRawRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!symbol) return;
@@ -21,8 +51,8 @@ export const useMarketData = (symbol) => {
     setLatestSnapshot(null);
     latestRawRef.current = null;
 
-    let ws;
-    let reconnectTimer;
+    let ws: WebSocket;
+    let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
     let stopped = false;
 
     const connect = () => {
@@ -30,7 +60,7 @@ export const useMarketData = (symbol) => {
 
       ws.onopen = () => setIsConnected(true);
 
-      ws.onmessage = (event) => {
+      ws.onmessage = (event: MessageEvent<string>) => {
         latestRawRef.current = event.data;
       };
 
@@ -50,9 +80,9 @@ export const useMarketData = (symbol) => {
       if (raw === null) return;
       latestRawRef.current = null;
 
-      let message;
+      let message: LegacyMessage;
       try {
-        message = JSON.parse(raw);
+        message = JSON.parse(raw) as LegacyMessage;
       } catch (e) {
         console.error('Error parsing message', e);
         return;
