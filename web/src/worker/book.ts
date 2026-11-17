@@ -35,6 +35,14 @@ export interface Candle {
   volume: number;
 }
 
+// The top of the book at one moment, for the depth heatmap.
+export interface DepthColumn {
+  t: number; // ms
+  mid: number;
+  bids: Level[];
+  asks: Level[];
+}
+
 // What the page renders, posted once per animation frame.
 export interface MarketView {
   connected: boolean;
@@ -45,12 +53,15 @@ export interface MarketView {
   metrics: Metrics | null;
   metricsHistory: Metrics[]; // oldest first
   candles: Candle[]; // oldest first
+  depthColumn: DepthColumn | null; // newest only; the heatmap keeps its own history
   framesPerSecond: number;
 }
 
 const TRADES_KEPT = 60;
 const METRICS_KEPT = 600; // 60 s at 10 Hz
 const CANDLES_KEPT = 900; // 15 minutes of one-second candles
+const COLUMN_EVERY_MS = 250;
+const COLUMN_LEVELS = 25;
 
 export class MarketState {
   private bids = new Map<number, number>(); // ticks -> lots
@@ -63,6 +74,7 @@ export class MarketState {
   trades: TradePrint[] = [];
   metricsHistory: Metrics[] = [];
   candles: Candle[] = [];
+  private depthColumn: DepthColumn | null = null;
   private frameTimes: number[] = [];
 
   apply(bytes: Uint8Array, nowMs: number): void {
@@ -154,7 +166,16 @@ export class MarketState {
       .map(([p, q]) => [p / this.priceScale, q / this.sizeScale]);
   }
 
+  private captureColumn(nowMs: number): void {
+    if (!this.synced || (this.depthColumn && nowMs - this.depthColumn.t < COLUMN_EVERY_MS)) return;
+    const bids = this.top('bid', COLUMN_LEVELS);
+    const asks = this.top('ask', COLUMN_LEVELS);
+    if (!bids[0] || !asks[0]) return;
+    this.depthColumn = { t: nowMs, mid: (bids[0][0] + asks[0][0]) / 2, bids, asks };
+  }
+
   view(nowMs: number, depth = 20): MarketView {
+    this.captureColumn(nowMs);
     this.frameTimes = this.frameTimes.filter((t) => nowMs - t < 1000);
     return {
       connected: this.connected,
@@ -165,6 +186,7 @@ export class MarketState {
       metrics: this.metricsHistory.at(-1) ?? null,
       metricsHistory: this.metricsHistory,
       candles: this.candles,
+      depthColumn: this.depthColumn,
       framesPerSecond: this.frameTimes.length,
     };
   }
