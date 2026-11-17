@@ -6,6 +6,7 @@
 
 A viewer first gets a Snapshot, then per tick at most one Delta (every level that changed
 since the previous frame, at its latest size), every Trade, and the latest Analytics.
+A text "ping:<token>" from the viewer comes back as the same text, after its queued frames.
 """
 
 from __future__ import annotations
@@ -117,12 +118,22 @@ def create_app(hub: Hub | None = None, bus_url: str | None = None) -> FastAPI:
                 if frame == CLOSE_FRAME:
                     await websocket.close(code=1013, reason="too slow to keep up")
                     return
-                await websocket.send_bytes(frame)
+                if isinstance(frame, str):
+                    await websocket.send_text(frame)
+                else:
+                    await websocket.send_bytes(frame)
 
         async def receive() -> None:
+            # The only thing viewers send is "ping:<anything>". The reply goes through the same
+            # queue as the market data, so the round trip includes any queueing here.
             try:
                 while True:
-                    await websocket.receive_bytes()
+                    text = await websocket.receive_text()
+                    if text.startswith("ping:"):
+                        try:
+                            viewer.queue.put_nowait(text)
+                        except asyncio.QueueFull:
+                            pass  # a viewer this far behind is being resynced anyway
             except WebSocketDisconnect:
                 return
 

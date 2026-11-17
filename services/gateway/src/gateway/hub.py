@@ -26,7 +26,8 @@ CLOSE_FRAME = b""  # sentinel: the sender closes the socket with 1013
 @dataclass(eq=False)
 class Viewer:
     key: Key
-    queue: asyncio.Queue[bytes] = field(default_factory=lambda: asyncio.Queue(QUEUE_FRAMES))
+    # Binary Envelope frames, plus text replies to the viewer's latency pings.
+    queue: asyncio.Queue[bytes | str] = field(default_factory=lambda: asyncio.Queue(QUEUE_FRAMES))
     needs_snapshot: bool = True
     behind_since: float | None = None
     closed: bool = False
