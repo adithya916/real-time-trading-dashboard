@@ -38,3 +38,4 @@
 
 - The web app is TypeScript (strict, `noUncheckedIndexedAccess`) with typescript-eslint and vitest. `store.ts` is a small external store read through `useSyncExternalStore`, so high-rate data stays out of React state; `panels.ts` is the registry each dashboard view adds itself to with one line. `ci-web` adds typecheck and tests.
 - The dashboard reads the gateway: a Web Worker owns the WebSocket, decodes Protobuf (generated with buf and protoc-gen-es into `web/src/gen`, git-ignored, by `npm run gen`), applies snapshots and deltas, and posts one view per animation frame into the store. Views are panels (metrics, chart, order book, trades) that re-render only when their data changes.
+- Canvas charts: uPlot draws mid, microprice and VWAP over the last 60 s and Lightweight Charts draws one-second candles built from trades in the worker. Both update in place from the store; Recharts is gone.

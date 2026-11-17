@@ -21,11 +21,12 @@
   "dependencies": {
     "@bufbuild/protobuf": "2.2.3",
     "clsx": "^2.1.0",
+    "lightweight-charts": "4.2.2",
     "lucide-react": "^0.309.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "recharts": "^2.10.3",
-    "tailwind-merge": "^2.2.0"
+    "tailwind-merge": "^2.2.0",
+    "uplot": "1.6.31"
   },
   "devDependencies": {
     "@bufbuild/buf": "1.47.2",
