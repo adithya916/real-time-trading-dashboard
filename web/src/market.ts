@@ -12,6 +12,8 @@ export const EMPTY_VIEW: MarketView = {
   metricsHistory: [],
   candles: [],
   depthColumn: null,
+  rttP50: null,
+  rttP99: null,
   framesPerSecond: 0,
 };
 

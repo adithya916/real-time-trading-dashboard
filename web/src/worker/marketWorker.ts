@@ -6,11 +6,13 @@ export type ToWorker = { type: 'connect'; url: string } | { type: 'frame' };
 export type FromWorker = { type: 'view'; view: ReturnType<MarketState['view']> };
 
 const RECONNECT_MS = [500, 1000, 2000, 5000];
+const PING_EVERY_MS = 1000;
 
 let state = new MarketState();
 let socket: WebSocket | null = null;
 let attempt = 0;
 let currentUrl = '';
+let pinger: ReturnType<typeof setInterval> | undefined;
 
 function connect(url: string): void {
   currentUrl = url;
@@ -21,12 +23,23 @@ function connect(url: string): void {
   ws.onopen = () => {
     attempt = 0;
     state.connected = true;
+    // The gateway echoes text pings after the frames already queued for us, so the round
+    // trip includes any time our data spent waiting there.
+    clearInterval(pinger);
+    pinger = setInterval(() => ws.send(`ping:${performance.now()}`), PING_EVERY_MS);
   };
-  ws.onmessage = (event: MessageEvent<ArrayBuffer>) => {
+  ws.onmessage = (event: MessageEvent<ArrayBuffer | string>) => {
+    if (typeof event.data === 'string') {
+      if (event.data.startsWith('ping:')) {
+        state.recordRtt(performance.now() - Number(event.data.slice(5)));
+      }
+      return;
+    }
     state.apply(new Uint8Array(event.data), Date.now());
   };
   ws.onclose = () => {
     state.connected = false;
+    clearInterval(pinger);
     if (socket !== ws) return; // replaced by a newer connection
     const delay = RECONNECT_MS[Math.min(attempt, RECONNECT_MS.length - 1)];
     attempt += 1;

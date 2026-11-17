@@ -1,7 +1,7 @@
 import { create, toBinary } from '@bufbuild/protobuf';
 import { describe, expect, it } from 'vitest';
 import { EnvelopeSchema, type Envelope } from '../gen/marketdata/v1/marketdata_pb';
-import { MarketState } from '../worker/book';
+import { MarketState, percentile } from '../worker/book';
 
 type Payload = Envelope['payload'];
 
@@ -161,5 +161,21 @@ describe('MarketState', () => {
       { time: 5, open: 100, high: 101, low: 99, close: 99, volume: 2 },
       { time: 6, open: 100.5, high: 100.5, low: 100.5, close: 100.5, volume: 1 },
     ]);
+  });
+
+  it('keeps the last minute of round trips and reports p50 and p99', () => {
+    const state = new MarketState();
+    expect(state.view(0).rttP50).toBeNull();
+    for (let ms = 1; ms <= 100; ms += 1) state.recordRtt(ms); // only the last 60 are kept
+    const view = state.view(0);
+    expect(view.rttP50).toBe(71);
+    expect(view.rttP99).toBe(99); // nearest rank: position 58 of 41..100
+  });
+});
+
+describe('percentile', () => {
+  it('picks the nearest rank', () => {
+    expect(percentile([5, 1, 3], 50)).toBe(3);
+    expect(percentile([], 50)).toBeNull();
   });
 });

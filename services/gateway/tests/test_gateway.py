@@ -64,7 +64,9 @@ def apply_frames(book: dict[int, dict[int, int]], frames: list[bytes]) -> None:
 def drain(viewer: Viewer) -> list[bytes]:
     frames = []
     while not viewer.queue.empty():
-        frames.append(viewer.queue.get_nowait())
+        frame = viewer.queue.get_nowait()
+        assert isinstance(frame, bytes)  # no pings in these tests
+        frames.append(frame)
     return frames
 
 
@@ -215,3 +217,15 @@ def test_the_websocket_sends_a_snapshot_then_conflated_deltas() -> None:
             second = Envelope.FromString(ws.receive_bytes())
             assert second.HasField("delta") and second.seq == 3
             assert [(u.price_ticks, u.size_lots) for u in second.delta.updates] == [(99, 4)]
+
+
+def test_a_text_ping_comes_back_after_the_queued_frames() -> None:
+    hub = Hub()
+    hub.on_envelope(snapshot(1))
+    with (
+        TestClient(create_app(hub)) as client,
+        client.websocket_connect("/ws/kraken/BTC-USD") as ws,
+    ):
+        assert Envelope.FromString(ws.receive_bytes()).HasField("snapshot")
+        ws.send_text("ping:12345.5")
+        assert ws.receive_text() == "ping:12345.5"

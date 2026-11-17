@@ -55,12 +55,21 @@ export interface MarketView {
   candles: Candle[]; // oldest first
   depthColumn: DepthColumn | null; // newest only; the heatmap keeps its own history
   framesPerSecond: number;
+  rttP50: number | null; // ms, over the last minute of pings
+  rttP99: number | null;
 }
 
 const TRADES_KEPT = 60;
+
+export function percentile(values: number[], q: number): number | null {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.min(sorted.length - 1, Math.round((q / 100) * (sorted.length - 1)))]!;
+}
 const METRICS_KEPT = 600; // 60 s at 10 Hz
 const CANDLES_KEPT = 900; // 15 minutes of one-second candles
 const COLUMN_EVERY_MS = 250;
+const RTTS_KEPT = 60;
 const COLUMN_LEVELS = 25;
 
 export class MarketState {
@@ -75,6 +84,7 @@ export class MarketState {
   metricsHistory: Metrics[] = [];
   candles: Candle[] = [];
   private depthColumn: DepthColumn | null = null;
+  private rtts: number[] = [];
   private frameTimes: number[] = [];
 
   apply(bytes: Uint8Array, nowMs: number): void {
@@ -166,6 +176,11 @@ export class MarketState {
       .map(([p, q]) => [p / this.priceScale, q / this.sizeScale]);
   }
 
+  recordRtt(ms: number): void {
+    this.rtts.push(ms);
+    if (this.rtts.length > RTTS_KEPT) this.rtts.shift();
+  }
+
   private captureColumn(nowMs: number): void {
     if (!this.synced || (this.depthColumn && nowMs - this.depthColumn.t < COLUMN_EVERY_MS)) return;
     const bids = this.top('bid', COLUMN_LEVELS);
@@ -187,6 +202,8 @@ export class MarketState {
       metricsHistory: this.metricsHistory,
       candles: this.candles,
       depthColumn: this.depthColumn,
+      rttP50: percentile(this.rtts, 50),
+      rttP99: percentile(this.rtts, 99),
       framesPerSecond: this.frameTimes.length,
     };
   }
