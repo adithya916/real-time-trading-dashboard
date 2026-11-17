@@ -25,5 +25,11 @@ export const panels: Panel[] = [
     span: 8,
     component: lazy(() => import('./panels/Candles')),
   },
+  {
+    id: 'heatmap',
+    title: 'Depth heatmap (±15 bps)',
+    span: 8,
+    component: lazy(() => import('./panels/Heatmap')),
+  },
   { id: 'trades', title: 'Trades', span: 4, component: lazy(() => import('./panels/Trades')) },
 ];
