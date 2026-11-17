@@ -1,3 +1,6 @@
-export const WS_BASE_URL = import.meta.env.VITE_WS_URL ?? 'ws://localhost:8000';
+export const GATEWAY_URL = import.meta.env.VITE_GATEWAY_URL ?? 'ws://localhost:8080';
+export const DEFAULT_VENUE = import.meta.env.VITE_DEFAULT_VENUE ?? 'kraken';
+export const DEFAULT_SYMBOL = import.meta.env.VITE_DEFAULT_SYMBOL ?? 'BTC-USD';
 
-export const SYMBOLS = ['AAPL', 'GOOG', 'MSFT', 'AMZN', 'TSLA'];
+export const streamUrl = (venue: string, symbol: string) =>
+  `${GATEWAY_URL}/ws/${encodeURIComponent(venue)}/${encodeURIComponent(symbol)}`;
