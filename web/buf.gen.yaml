@@ -1,0 +1,9 @@
+# TypeScript for the marketdata.v1 schema. Generated into src/gen/ (git-ignored) by npm run gen,
+# which runs automatically before dev, build, typecheck and test.
+version: v2
+inputs:
+  - directory: ../proto
+plugins:
+  - local: protoc-gen-es
+    out: src/gen
+    opt: target=ts
