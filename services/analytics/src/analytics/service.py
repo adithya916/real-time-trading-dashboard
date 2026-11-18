@@ -2,7 +2,8 @@
 
     python -m analytics.service --bus nats://localhost:4222 [--db postgresql://...]
 
-Subscribes to md.*.*.book and md.*.*.trade. Every 100 ms it samples each mid and publishes an
+Subscribes to md.*.*.* once, so book and trade envelopes arrive in publish order (two
+subscriptions run their callbacks independently), and skips its own analytics. Every 100 ms it samples each mid and publishes an
 Analytics envelope to md.<venue>.<symbol>.analytics, but only when the metrics changed.
 Analytics envelopes carry their own gapless seq per symbol.
 
@@ -92,13 +93,14 @@ async def run(bus_url: str, db_url: str | None = None) -> None:
 
     async def on_message(msg: Any) -> None:
         envelope = Envelope.FromString(msg.data)
+        if envelope.HasField("analytics"):
+            return
         symbol = state.on_envelope(envelope)
         if writer and envelope.HasField("trade") and symbol.synced:
             writer.add(trade_row(envelope, symbol.price_scale, symbol.size_scale))
 
-    await nc.subscribe("md.*.*.book", cb=on_message)
-    await nc.subscribe("md.*.*.trade", cb=on_message)
-    log.info("analytics: subscribed to books and trades on %s", bus_url)
+    await nc.subscribe("md.*.*.*", cb=on_message)
+    log.info("analytics: subscribed to md.*.*.* on %s", bus_url)
     published = 0
     try:
         while True:
