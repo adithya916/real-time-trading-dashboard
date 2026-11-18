@@ -56,7 +56,7 @@ jobs:
         # Core NATS doesn't replay, so a consumer that subscribes after the replay misses it.
         run: |
           for i in $(seq 1 60); do
-            names=$(curl -fsS 'http://localhost:8222/connz?subs=1' | jq -r '.connections[] | select(.num_subscriptions > 0) | .name')
+            names=$(curl -fsS 'http://localhost:8222/connz' | jq -r '.connections[] | select(.subscriptions > 0) | .name')
             if echo "$names" | grep -qx analytics && echo "$names" | grep -qx gateway; then exit 0; fi
             sleep 1
           done
