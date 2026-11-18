@@ -6,5 +6,6 @@ include:
   - deploy/compose/nats.yaml
   - deploy/compose/timescale.yaml
   - deploy/compose/ingest.yaml
+  - deploy/compose/simulator.yaml
   - deploy/compose/analytics.yaml
   - deploy/compose/gateway.yaml

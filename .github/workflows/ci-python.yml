@@ -22,6 +22,7 @@ jobs:
           filters: |
             python:
               - 'services/**'
+              - 'core/**'
               - 'proto/**'
               - 'scripts/**'
               - 'bench/**'
@@ -74,7 +75,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [common, ingest, recorder, analytics, gateway]
+        service: [common, ingest, recorder, analytics, gateway, simulator]
     defaults:
       run:
         working-directory: services/${{ matrix.service }}
