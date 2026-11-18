@@ -1,7 +1,7 @@
 # Common tasks. On Windows, run them from WSL, or copy the command under each target.
 COMPOSE ?= docker compose
 
-.PHONY: help up down logs config fmt lint test check proto cpp-test bench-cpp
+.PHONY: help up down logs config demo fmt lint test check proto cpp-test bench-cpp
 
 help: ## List targets
 	@grep -E '^[a-z-]+:.*##' Makefile | sed 's/:.*##/ -/'
@@ -17,6 +17,9 @@ logs: ## Follow the logs
 
 config: ## Validate the Compose files
 	$(COMPOSE) config --quiet
+
+demo: proto ## Gateway replaying a Kraken recording on port 8080, no Docker or NATS needed
+	cd services/gateway && uv run python -m gateway --demo ../ingest/tests/fixtures/kraken_btcusd.jsonl.gz kraken:BTC-USD
 
 fmt: ## Run every formatter and lint hook on the whole tree
 	pre-commit run --all-files

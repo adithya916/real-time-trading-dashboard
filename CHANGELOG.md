@@ -47,3 +47,7 @@
 - `services/legacy` (FastAPI + Redis Pub/Sub), its Compose files, its CI matrix entry and the `ws_smoke` integration step are gone; the dashboard has read the gateway since the frontend rebuild. The integration job now health-checks the gateway.
 - The baseline benchmark measured that server, so its runner and workflow went with it. The results stay in `bench/results/baseline.md` as the "before" numbers; tag `v0-baseline` still reproduces them.
 - README rewritten for the current stack.
+
+## Demo mode
+
+- `python -m gateway --demo <recording> <venue:symbols>` (`make demo`): the gateway plays a recording through the real venue adapter at the recorded pace, on a loop, and computes the analytics in-process, with no NATS or Docker. Seqs keep counting across loops and timestamps are restamped with the current time, so the dashboard runs against it unchanged. The analytics code is a `demo` dependency group, left out of the gateway image.
