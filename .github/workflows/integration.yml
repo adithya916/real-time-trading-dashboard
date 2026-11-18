@@ -22,6 +22,7 @@ jobs:
           filters: |
             stack:
               - 'services/**'
+              - 'core/**'
               - 'deploy/**'
               - 'compose.yaml'
               - 'scripts/bus_smoke.py'
@@ -79,6 +80,8 @@ jobs:
           uv run --project services/recorder --frozen --python 3.12 python -m recorder binance BTC-USDT             --from-recording services/ingest/tests/fixtures/binance_btcusdt.jsonl.gz --root /tmp/parquet
           uv run --project services/recorder --frozen --python 3.12 python -m recorder.replay             --root /tmp/parquet --bus nats://localhost:4222 --speed 50 binance:BTC-USDT
           uv run --project services/recorder --frozen --python 3.12 python scripts/replay_smoke.py             nats://localhost:4222 binance BTC-USDT services/ingest/tests/golden/binance_btcusdt.json
+      - name: The simulated venue reaches the browser through the gateway
+        run: uv run --project services/gateway --frozen --python 3.12 python scripts/gateway_smoke.py ws://localhost:8080/ws/sim/BTC-SIM
       - name: Build the ingest image
         run: docker compose --profile feeds build ingest
       - name: Logs on failure

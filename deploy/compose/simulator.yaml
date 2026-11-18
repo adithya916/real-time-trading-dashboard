@@ -1,0 +1,11 @@
+services:
+  simulator:
+    # A simulated venue ("sim"), so the stack has a market to show without live feeds.
+    build:
+      context: ../..
+      dockerfile: services/simulator/Dockerfile
+    command: ["--bus", "nats://nats:4222", "BTC-SIM", "ETH-SIM"]
+    restart: unless-stopped
+    depends_on:
+      nats:
+        condition: service_healthy
