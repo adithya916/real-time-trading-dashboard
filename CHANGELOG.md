@@ -56,3 +56,12 @@
 - Depth heatmap: the scroll-left copy ran under the device-pixel-ratio transform, so at any ratio other than 1 the image grew every column and only the newest column stayed visible; it also blended over the old pixels instead of replacing them. The copy now runs in device pixels with the `copy` composite mode.
 - The candle chart no longer takes the mouse wheel or vertical swipes, so the page scrolls over it; dragging still pans.
 - Layout: the trade tape sits beside the candles and the heatmap spans the full width (more history), so no grid cell is left empty.
+
+## Candle history
+
+- TimescaleDB in Compose (`deploy/compose/timescale.yaml`). Migrations live in `services/analytics/src/analytics/migrations/`, named by timestamp so two branches never claim the same number; analytics applies them in order at startup under an advisory lock.
+- A `trades` hypertable (integer ticks and lots with their scales, unique per venue, symbol, trade id and time) and continuous aggregates `candles_1m`, `candles_5m` and `candles_1h`, with real-time aggregation so the newest candle is current. Open and close are ordered by the venue's trade id, since many trades share a timestamp.
+- `analytics --db`: every trade is buffered and written about once a second with `COPY` into a temporary table, then `INSERT ... ON CONFLICT DO NOTHING`, so replaying a session never counts a trade twice.
+- `gateway --db`: `GET /history/candles?venue&symbol&interval=1m|5m|1h&limit` returns candles oldest first, or 503 when there is no database.
+- The integration job replays the Kraken recording and checks every 1 m, 5 m and 1 h candle against a DuckDB recomputation of the same trades.
+- The candle chart has 1s / 1m / 5m / 1h. Longer intervals load history and keep the last bar moving with the live one-second candles; with no database (demo mode) they are built from live data only.

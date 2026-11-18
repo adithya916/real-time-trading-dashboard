@@ -1,12 +1,8 @@
 import { useEffect, useState } from 'react';
-import { DEFAULT_SYMBOL, DEFAULT_VENUE, GATEWAY_HTTP_URL, streamUrl } from './config';
+import { GATEWAY_HTTP_URL } from './config';
 import { fmt } from './format';
-import { connectTo, useMarket } from './market';
-
-interface Feed {
-  venue: string;
-  symbol: string;
-}
+import { feedStore, selectFeed, useMarket, type Feed } from './market';
+import { useStore } from './store';
 
 const key = (f: Feed) => `${f.venue}/${f.symbol}`;
 const REFRESH_FEEDS_MS = 5000;
@@ -14,7 +10,7 @@ const REFRESH_FEEDS_MS = 5000;
 // Venue and symbol picker (from the gateway's /symbols) and the connection readout.
 export default function Header() {
   const [feeds, setFeeds] = useState<Feed[]>([]);
-  const [selected, setSelected] = useState<Feed>({ venue: DEFAULT_VENUE, symbol: DEFAULT_SYMBOL });
+  const selected = useStore(feedStore, (f) => f);
   const connected = useMarket((v) => v.connected);
   const p50 = useMarket((v) => v.rttP50);
   const p99 = useMarket((v) => v.rttP99);
@@ -43,8 +39,7 @@ export default function Header() {
   const choose = (value: string) => {
     const feed = options.find((f) => key(f) === value);
     if (!feed) return;
-    setSelected(feed);
-    connectTo(streamUrl(feed.venue, feed.symbol));
+    selectFeed(feed);
   };
 
   return (

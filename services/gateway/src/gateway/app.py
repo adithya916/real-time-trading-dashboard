@@ -2,6 +2,7 @@
 
     GET /health
     GET /symbols                          venues and symbols with an in-sync book
+    GET /history/candles                  past candles from TimescaleDB (see history.py)
     WS  /ws/{venue}/{symbol}              binary marketdata.v1 Envelope frames
 
 A viewer first gets a Snapshot, then per tick at most one Delta (every level that changed
@@ -18,9 +19,10 @@ from collections.abc import AsyncIterator, Callable, Coroutine, Sequence
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
+from gateway.history import VIEWS, History, Unavailable
 from gateway.hub import CLOSE_FRAME, Hub, Key
 from mdcommon.schema import Envelope
 
@@ -86,9 +88,11 @@ def create_app(
     hub: Hub | None = None,
     bus_url: str | None = None,
     background: Sequence[Callable[[], Coroutine[Any, Any, Any]]] = (),
+    history: History | None = None,
 ) -> FastAPI:
     """`background` coroutines run for the app's lifetime, e.g. the demo replay."""
     hub = hub or Hub()
+    history = history or History(None)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -100,6 +104,7 @@ def create_app(
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
+        await history.close()
 
     app = FastAPI(lifespan=lifespan)
     app.state.hub = hub
@@ -112,6 +117,20 @@ def create_app(
     @app.get("/symbols")
     async def symbols() -> list[dict[str, str]]:
         return [{"venue": v, "symbol": s} for (v, s), m in sorted(hub.mirrors.items()) if m.synced]
+
+    @app.get("/history/candles")
+    async def candles(
+        venue: str,
+        symbol: str,
+        interval: str = "1m",
+        limit: int = Query(500, ge=1, le=5000),
+    ) -> list[dict[str, Any]]:
+        if interval not in VIEWS:
+            raise HTTPException(400, f"interval must be one of {', '.join(VIEWS)}")
+        try:
+            return await history.candles(venue, symbol, interval, limit)
+        except Unavailable as exc:
+            raise HTTPException(503, str(exc)) from exc
 
     @app.websocket("/ws/{venue}/{symbol}")
     async def stream(websocket: WebSocket, venue: str, symbol: str) -> None:

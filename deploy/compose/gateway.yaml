@@ -5,9 +5,12 @@ services:
       dockerfile: services/gateway/Dockerfile
     ports:
       - "${GATEWAY_PORT:-8080}:8080"
+    command: ["--bus", "nats://nats:4222", "--port", "8080", "--db", "postgresql://md:${TIMESCALE_PASSWORD:-md-local-only}@timescale:5432/md"]
     restart: unless-stopped
     depends_on:
       nats:
+        condition: service_healthy
+      timescale:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health')"]
