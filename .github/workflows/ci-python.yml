@@ -74,7 +74,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [legacy, common, ingest, recorder, analytics, gateway]
+        service: [common, ingest, recorder, analytics, gateway]
     defaults:
       run:
         working-directory: services/${{ matrix.service }}

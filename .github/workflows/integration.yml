@@ -24,7 +24,6 @@ jobs:
               - 'services/**'
               - 'deploy/**'
               - 'compose.yaml'
-              - 'scripts/ws_smoke.py'
               - 'scripts/bus_smoke.py'
               - 'scripts/ingest_smoke.py'
               - 'scripts/analytics_smoke.py'
@@ -46,10 +45,8 @@ jobs:
         run: docker compose config --quiet
       - name: Start the stack
         run: docker compose up -d --build --wait --wait-timeout 180
-      - name: Health check
-        run: curl -fsS http://localhost:8000/health
-      - name: WebSocket smoke test
-        run: uv run --no-project --python 3.12 --with websockets==12.0 python scripts/ws_smoke.py ws://localhost:8000/ws/stream/AAPL
+      - name: Gateway health check
+        run: curl -fsS http://localhost:8080/health
       - name: Generate Protobuf code
         run: bash scripts/gen_proto.sh
       - name: NATS JetStream smoke test
