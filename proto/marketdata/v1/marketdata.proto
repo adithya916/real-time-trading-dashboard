@@ -27,6 +27,7 @@ message Envelope {
     Trade trade = 12;
     BookReset reset = 13;
     Analytics analytics = 14;
+    StrategyState strategy = 15;
   }
 }
 
@@ -109,4 +110,25 @@ message Analytics {
   double realized_vol_60s = 10;
   double vwap_session = 11;
   double twap_60s = 12;
+}
+
+// A trading strategy's state, published by the paper trader about twice a second on its own
+// gapless seq. Display only, like Analytics. PnL is in the quote currency.
+message StrategyState {
+  string name = 1;
+  int32 price_scale = 2;
+  int32 size_scale = 3;
+  // Signed: positive is long.
+  int64 position_lots = 4;
+  double realized_pnl = 5;
+  double unrealized_pnl = 6;
+  // Resting quotes; 0 when that side isn't quoted.
+  int64 bid_price_ticks = 7;
+  int64 ask_price_ticks = 8;
+  int64 quote_size_lots = 9;
+  uint64 fills = 10;
+  int64 traded_lots = 11;
+  // Quoting stopped by a risk limit; reason says which.
+  bool halted = 12;
+  string halt_reason = 13;
 }

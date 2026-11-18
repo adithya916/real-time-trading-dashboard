@@ -93,7 +93,7 @@ async def run(bus_url: str, db_url: str | None = None) -> None:
 
     async def on_message(msg: Any) -> None:
         envelope = Envelope.FromString(msg.data)
-        if envelope.HasField("analytics"):
+        if envelope.HasField("analytics") or envelope.HasField("strategy"):
             return
         symbol = state.on_envelope(envelope)
         if writer and envelope.HasField("trade") and symbol.synced:

@@ -43,6 +43,22 @@ export interface DepthColumn {
   asks: Level[];
 }
 
+// The paper trader's state, from its StrategyState envelopes (sizes and prices in real units).
+export interface Strategy {
+  name: string;
+  position: number;
+  realized: number;
+  unrealized: number;
+  bid: number | null;
+  ask: number | null;
+  quoteSize: number;
+  fills: number;
+  traded: number;
+  halted: boolean;
+  haltReason: string;
+  ts: number; // ms, when it arrived
+}
+
 // What the page renders, posted once per animation frame.
 export interface MarketView {
   connected: boolean;
@@ -57,9 +73,12 @@ export interface MarketView {
   framesPerSecond: number;
   rttP50: number | null; // ms, over the last minute of pings
   rttP99: number | null;
+  strategy: Strategy | null;
+  pnlHistory: [number, number][]; // [ms, total PnL], oldest first
 }
 
 const TRADES_KEPT = 60;
+const PNL_KEPT = 1200; // 10 minutes at two updates a second
 
 export function percentile(values: number[], q: number): number | null {
   if (values.length === 0) return null;
@@ -83,6 +102,8 @@ export class MarketState {
   trades: TradePrint[] = [];
   metricsHistory: Metrics[] = [];
   candles: Candle[] = [];
+  strategy: Strategy | null = null;
+  pnlHistory: [number, number][] = [];
   private depthColumn: DepthColumn | null = null;
   private rtts: number[] = [];
   private frameTimes: number[] = [];
@@ -146,6 +167,28 @@ export class MarketState {
         if (this.metricsHistory.length > METRICS_KEPT) this.metricsHistory.shift();
         break;
       }
+      case 'strategy': {
+        const s = payload.value;
+        const price = 10 ** s.priceScale;
+        const size = 10 ** s.sizeScale;
+        this.strategy = {
+          name: s.name,
+          position: Number(s.positionLots) / size,
+          realized: s.realizedPnl,
+          unrealized: s.unrealizedPnl,
+          bid: s.bidPriceTicks ? Number(s.bidPriceTicks) / price : null,
+          ask: s.askPriceTicks ? Number(s.askPriceTicks) / price : null,
+          quoteSize: Number(s.quoteSizeLots) / size,
+          fills: Number(s.fills),
+          traded: Number(s.tradedLots) / size,
+          halted: s.halted,
+          haltReason: s.haltReason,
+          ts: nowMs,
+        };
+        this.pnlHistory.push([nowMs, s.realizedPnl + s.unrealizedPnl]);
+        if (this.pnlHistory.length > PNL_KEPT) this.pnlHistory.shift();
+        break;
+      }
       case 'reset':
         this.synced = false;
         break;
@@ -205,6 +248,8 @@ export class MarketState {
       rttP50: percentile(this.rtts, 50),
       rttP99: percentile(this.rtts, 99),
       framesPerSecond: this.frameTimes.length,
+      strategy: this.strategy,
+      pnlHistory: this.pnlHistory,
     };
   }
 }

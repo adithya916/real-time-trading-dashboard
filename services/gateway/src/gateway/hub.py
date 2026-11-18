@@ -1,7 +1,7 @@
 """Viewers, mirrors and the 50 ms tick that conflates and fans out.
 
 Each tick a mirror's changes become one delta frame, encoded once and handed to every viewer of
-that symbol, plus every trade and the latest analytics. A viewer that just connected, or whose
+that symbol, plus every trade and the latest analytics and strategy state. A viewer that just connected, or whose
 book was replaced by a resync, gets a snapshot frame instead of the delta.
 
 Slow viewers: each has a bounded queue. If it is full, the backlog is dropped and the viewer is
@@ -74,7 +74,7 @@ class Hub:
 
     def tick(self, now: float) -> None:
         for key, mirror in self.mirrors.items():
-            delta, trades, analytics, resynced = mirror.drain()
+            delta, trades, latest, resynced = mirror.drain()
             viewers = self.viewers.get(key, set())
             if not viewers or not mirror.synced:
                 continue
@@ -85,7 +85,7 @@ class Hub:
             )
             for viewer in list(viewers):
                 self._send(
-                    viewer, now, snapshot, None if resynced else delta, trades, analytics, resynced
+                    viewer, now, snapshot, None if resynced else delta, trades, latest, resynced
                 )
 
     def _send(
@@ -95,7 +95,7 @@ class Hub:
         snapshot: bytes | None,
         delta: bytes | None,
         trades: list[bytes],
-        analytics: bytes | None,
+        latest: list[tuple[bytes, str]],
         resynced: bool,
     ) -> None:
         if viewer.closed:
@@ -115,8 +115,7 @@ class Hub:
         elif delta is not None:
             frames.append((delta, "delta"))
         frames += [(t, "trade") for t in trades]
-        if analytics is not None:
-            frames.append((analytics, "analytics"))
+        frames += latest
 
         if all(viewer.offer(frame, kind) for frame, kind in frames):
             viewer.needs_snapshot = False

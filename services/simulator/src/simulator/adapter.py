@@ -22,7 +22,7 @@ from ingest.adapters.base import FeedAdapter
 from mdcommon.clock import ReplayClock
 from mdcommon.schema import Delta, Envelope, Snapshot
 from simulator.agents import FlowParams, SideName
-from simulator.market import Result, SimMarket
+from simulator.market import Fill, Result, SimMarket
 
 PRICE_SCALE = 1
 SIZE_SCALE = 4
@@ -69,6 +69,8 @@ class SimulatorAdapter(FeedAdapter):
         self.markets: dict[str, SimMarket] = {}
         self.actions = 0
         self._outbox: asyncio.Queue[External] = asyncio.Queue()
+        # Called with fills of external orders that agent actions caused (resting orders hit).
+        self.on_fills: Callable[[str, list[Fill]], None] | None = None
 
     def book_snapshot(self, symbol: str) -> Snapshot | None:
         market = self.markets.get(symbol)
@@ -122,7 +124,10 @@ class SimulatorAdapter(FeedAdapter):
             action = pending[symbol]
             await clock.wait_for(action.at_ns)
             market = self.markets[symbol]
-            for envelope in self._envelopes(symbol, market.apply(action), action.at_ns):
+            result = market.apply(action)
+            if result.fills and self.on_fills:
+                self.on_fills(symbol, result.fills)
+            for envelope in self._envelopes(symbol, result, action.at_ns):
                 yield envelope
             pending[symbol] = market.next_action()
             self.actions += 1

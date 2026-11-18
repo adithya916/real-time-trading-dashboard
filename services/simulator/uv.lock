@@ -150,6 +150,30 @@ wheels = [
 ]
 
 [[package]]
+name = "papertrader"
+version = "0.1.0"
+source = { editable = "../papertrader" }
+dependencies = [
+    { name = "ingest" },
+    { name = "mdcommon" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "ingest", editable = "../ingest" },
+    { name = "mdcommon", editable = "../common" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "hypothesis", specifier = "==6.122.3" },
+    { name = "mypy", specifier = "==1.14.1" },
+    { name = "pytest", specifier = "==8.3.4" },
+    { name = "pytest-timeout", specifier = "==2.3.1" },
+    { name = "types-protobuf", specifier = "==5.29.1.20241207" },
+]
+
+[[package]]
 name = "pluggy"
 version = "1.7.0"
 source = { registry = "https://pypi.org/simple" }
@@ -214,6 +238,7 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "mypy" },
+    { name = "papertrader" },
     { name = "pytest" },
     { name = "pytest-timeout" },
     { name = "types-protobuf" },
@@ -229,6 +254,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "mypy", specifier = "==1.14.1" },
+    { name = "papertrader", editable = "../papertrader" },
     { name = "pytest", specifier = "==8.3.4" },
     { name = "pytest-timeout", specifier = "==2.3.1" },
     { name = "types-protobuf", specifier = "==5.29.1.20241207" },

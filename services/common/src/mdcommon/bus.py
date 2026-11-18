@@ -5,6 +5,7 @@ Subjects are md.<venue>.<symbol>.<kind>:
     book       snapshots, deltas and resets, on one subject so they stay in order
     trade      trades
     analytics  derived metrics
+    strategy   a trading strategy's state (the paper trader)
 
 Stream MD captures everything under md.> so a session can be replayed. The KV bucket
 "snap" holds the latest snapshot per venue and symbol, so a new consumer can start from it
@@ -39,6 +40,7 @@ _KIND_BY_PAYLOAD = {
     "reset": "book",
     "trade": "trade",
     "analytics": "analytics",
+    "strategy": "strategy",
 }
 
 
@@ -49,7 +51,7 @@ def _token(value: str, what: str) -> str:
 
 
 def subject(venue: str, symbol: str, kind: str) -> str:
-    if kind not in {"book", "trade", "analytics"}:
+    if kind not in {"book", "trade", "analytics", "strategy"}:
         raise ValueError(f"unknown subject kind {kind!r}")
     return f"md.{_token(venue, 'venue')}.{_token(symbol, 'symbol')}.{kind}"
 

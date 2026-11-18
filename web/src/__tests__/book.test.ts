@@ -179,3 +179,55 @@ describe('percentile', () => {
     expect(percentile([], 50)).toBeNull();
   });
 });
+
+describe('strategy state', () => {
+  const strategy = (realized: number, unrealized: number, bid: number) =>
+    bytes(1, {
+      case: 'strategy',
+      value: {
+        name: 'imbalance-mm',
+        priceScale: 1,
+        sizeScale: 4,
+        positionLots: -250n,
+        realizedPnl: realized,
+        unrealizedPnl: unrealized,
+        bidPriceTicks: BigInt(bid),
+        askPriceTicks: 500_020n,
+        quoteSizeLots: 20n,
+        fills: 12n,
+        tradedLots: 900n,
+        halted: false,
+        haltReason: '',
+      },
+    } as Payload);
+
+  it('converts to real units and keeps a PnL history', () => {
+    const state = new MarketState();
+    state.apply(strategy(1.5, -0.5, 499_990), 1000);
+    state.apply(strategy(2, 0.25, 0), 1500);
+    const view = state.view(1500);
+    expect(view.strategy).toMatchObject({
+      name: 'imbalance-mm',
+      position: -0.025,
+      realized: 2,
+      unrealized: 0.25,
+      bid: null, // 0 ticks means that side isn't quoted
+      ask: 50_002,
+      quoteSize: 0.002,
+      fills: 12,
+      traded: 0.09,
+      ts: 1500,
+    });
+    expect(view.pnlHistory).toEqual([
+      [1000, 1],
+      [1500, 2.25],
+    ]);
+  });
+
+  it('does not touch the book, whose seq it does not share', () => {
+    const state = new MarketState();
+    state.apply(snapshot(10), 0);
+    state.apply(strategy(0, 0, 1), 0);
+    expect(state.view(0).seq).toBe(10);
+  });
+});

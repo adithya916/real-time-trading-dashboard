@@ -14,6 +14,7 @@ from mdcommon.gen.marketdata.v1.marketdata_pb2 import (
     ResetReason,
     Side,
     Snapshot,
+    StrategyState,
     Trade,
 )
 
@@ -28,6 +29,7 @@ __all__ = [
     "ResetReason",
     "Side",
     "Snapshot",
+    "StrategyState",
     "Trade",
 ]
 

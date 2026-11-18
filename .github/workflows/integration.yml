@@ -31,6 +31,7 @@ jobs:
               - 'scripts/gateway_smoke.py'
               - 'scripts/history_smoke.py'
               - 'scripts/replay_smoke.py'
+              - 'scripts/strategy_smoke.py'
               - 'proto/**'
               - '.github/workflows/integration.yml'
 
@@ -82,6 +83,8 @@ jobs:
           uv run --project services/recorder --frozen --python 3.12 python scripts/replay_smoke.py             nats://localhost:4222 binance BTC-USDT services/ingest/tests/golden/binance_btcusdt.json
       - name: The simulated venue reaches the browser through the gateway
         run: uv run --project services/gateway --frozen --python 3.12 python scripts/gateway_smoke.py ws://localhost:8080/ws/sim/BTC-SIM
+      - name: The paper trader trades on the simulator and its PnL reaches the browser
+        run: uv run --project services/gateway --frozen --python 3.12 python scripts/strategy_smoke.py ws://localhost:8080/ws/sim/BTC-SIM
       - name: Build the ingest image
         run: docker compose --profile feeds build ingest
       - name: Logs on failure

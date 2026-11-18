@@ -7,5 +7,6 @@ include:
   - deploy/compose/timescale.yaml
   - deploy/compose/ingest.yaml
   - deploy/compose/simulator.yaml
+  - deploy/compose/papertrader.yaml
   - deploy/compose/analytics.yaml
   - deploy/compose/gateway.yaml

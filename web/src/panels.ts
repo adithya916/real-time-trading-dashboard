@@ -29,7 +29,8 @@ export const panels: Panel[] = [
   {
     id: 'heatmap',
     title: 'Depth heatmap (±15 bps)',
-    span: 12,
+    span: 8,
     component: lazy(() => import('./panels/Heatmap')),
   },
+  { id: 'pnl', title: 'Paper trader', span: 4, component: lazy(() => import('./panels/Pnl')) },
 ];
