@@ -1,5 +1,9 @@
 # Baseline: legacy stack
 
+The "before" numbers. The legacy server (FastAPI + Redis Pub/Sub) and this benchmark have since
+been removed; both are preserved at tag `v0-baseline` (`git checkout v0-baseline`, `make up`,
+`make bench-baseline`).
+
 Machine: GitHub Actions ubuntu-latest Â· Linux-7.0.0-1019-azure-x86_64-with-glibc2.43 Â· 4 CPUs Â· Python 3.12.16 Â· commit 9310bb5
 
 | Metric | Value |

@@ -41,3 +41,9 @@
 - Canvas charts: uPlot draws mid, microprice and VWAP over the last 60 s and Lightweight Charts draws one-second candles built from trades in the worker. Both update in place from the store; Recharts is gone.
 - Depth heatmap: the worker records the top 25 levels per side every 250 ms, and a canvas panel scrolls each column in from the right, shading levels by size on a log scale with the mid as a white line.
 - Header: venue and symbol picker from the gateway's `/symbols`, and a readout of WebSocket round-trip p50/p99 (the gateway echoes `ping:` text after the frames already queued for that viewer), frames per second and book seq.
+
+## Redis and the legacy server removed
+
+- `services/legacy` (FastAPI + Redis Pub/Sub), its Compose files, its CI matrix entry and the `ws_smoke` integration step are gone; the dashboard has read the gateway since the frontend rebuild. The integration job now health-checks the gateway.
+- The baseline benchmark measured that server, so its runner and workflow went with it. The results stay in `bench/results/baseline.md` as the "before" numbers; tag `v0-baseline` still reproduces them.
+- README rewritten for the current stack.

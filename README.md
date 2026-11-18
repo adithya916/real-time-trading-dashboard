@@ -1,101 +1,106 @@
 # Real-Time Trading Dashboard
 
-A full-stack trading dashboard prototype built with FastAPI, Redis, and React. A simulated market feed is processed, enriched with live analytics, fanned out over Redis Pub/Sub, and streamed to the browser over WebSockets.
+Live crypto order books from Kraken and Binance, normalized into one Protobuf schema, carried over NATS JetStream, enriched with microstructure metrics, and served to a browser dashboard through a conflating WebSocket gateway. The order book and a price-time matching engine also exist in C++ (pybind11), checked against the Python reference book on recorded venue data.
 
-## Features
+## How it works
 
-- **Market Data Simulation**: Generates ticks across 5 symbols with L1 quotes and 5 levels of L2 depth, paced to a configurable target rate (default 50,000 ticks/sec).
-- **Real-Time Analytics**: Session VWAP and 20-tick rolling volatility (standard deviation of log returns), updated on every tick in O(window) time.
-- **Batched Publishing**: Ticks are drained from the queue in batches and published to Redis in a single pipelined round trip.
-- **Per-Symbol Channels**: Each WebSocket client subscribes only to its symbol's Redis channel.
-- **Throttled Frontend**: The client keeps only the newest message per 100ms window and parses just that one, so rendering cost doesn't grow with the tick rate. It reconnects automatically if the backend restarts.
+```
+Kraken v2 WS ─┐                      ┌─> analytics ──(metrics)──┐
+Binance WS ───┼─> ingest ──> NATS ───┼─> recorder ──> Parquet   │
+recordings ───┘   (adapters,  JetStream                          v
+                   PyBook,     md.<venue>.<symbol>.{book,trade,analytics}
+                   checksums)        └─> gateway ──(50 ms conflated deltas)──> web
+```
 
-## Tech Stack
+- **ingest** runs one adapter per venue. Kraken books are verified against the venue's CRC32 checksum on every message; Binance books are synced to a REST snapshot by the documented `U`/`u` rules. A sequence gap or checksum mismatch emits a `BookReset` and resyncs. Every envelope carries a gapless `seq` per symbol and per-hop timestamps.
+- **NATS JetStream** keeps 24 h of the stream (`MD` on `md.>`) and the latest snapshot of each book in the `snap` KV bucket, so a consumer that starts late loads the snapshot and applies the stream from the next `seq`.
+- **analytics** mirrors every book and publishes mid, microprice, spread, L1/L5 imbalance, depth within 10 bps, realized volatility (1/10/60 s), VWAP and TWAP up to 10 times a second.
+- **recorder** writes the raw envelopes to hourly, Hive-partitioned Parquet files.
+- **gateway** holds one bus subscription and a mirror of every book. Every 50 ms it turns each book's changes into one delta, encodes it once and sends it to every viewer of that symbol, with every trade and the latest metrics. Slow viewers get a fresh snapshot instead of a backlog and are disconnected if they stay behind.
+- **web** (React + TypeScript): a Web Worker owns the WebSocket, decodes Protobuf and keeps the book; the page reads one view per animation frame. Panels: metrics, uPlot price lines, Lightweight Charts candles, a canvas depth heatmap, the order book and the trade tape, plus a round-trip latency readout.
 
-- **Backend**: Python, FastAPI, Redis, orjson
-- **Frontend**: React, Vite, TailwindCSS, Recharts
-- **Communication**: WebSockets, Redis Pub/Sub
+Design decisions are in [`docs/adr/`](docs/adr/); the build plan is [`docs/build-plan.html`](docs/build-plan.html) and the history is in [`CHANGELOG.md`](CHANGELOG.md).
+
+## Measured
+
+| | Value | Where |
+| --- | ---: | --- |
+| C++ `L2Book` updates (one core, GitHub runner) | 32.4 M/s | [`bench/results/cpp.md`](bench/results/cpp.md) |
+| C++ matching engine actions | 9.4 M/s | same |
+| Messages per viewer per symbol, gateway | ≤ 20/s (one frame per 50 ms tick) | `services/gateway` |
+| Messages per viewer, the original server (before) | 6,277/s | [`bench/results/baseline.md`](bench/results/baseline.md) |
+
+Driven from Python one message at a time, the C++ book is still slower than the Python one (0.4–0.7×): the gain needs the whole message loop in C++. Latency histograms and a load test of the gateway are next.
 
 ## Repository layout
 
 | Path | What lives there |
 | --- | --- |
-| `services/legacy/` | The current FastAPI backend (simulator, analytics, WebSocket server) |
+| `proto/` | `marketdata.v1` schema (Envelope, Snapshot, Delta, Trade, BookReset, Analytics) |
+| `services/common/` | `mdcommon`: generated schema code, tick conversion, bus subjects and publisher |
+| `services/ingest/` | Venue adapters, the reference book `PyBook`, recording and replay |
+| `services/analytics/` | Metrics computed from the bus |
+| `services/recorder/` | Parquet recorder |
+| `services/gateway/` | Conflating WebSocket gateway |
+| `core/` | C++20 `bookcore`: `L2Book`, `MatchingEngine`, pybind11 bindings, tests, benchmarks |
 | `web/` | React dashboard |
-| `deploy/compose/` | One Compose file per service, joined by `compose.yaml` |
-| `docs/build-plan.html` | Interactive 7-day upgrade plan |
-
-The project is being rebuilt in daily lanes of small branches; see `docs/build-plan.html` and `CHANGELOG.md`.
+| `deploy/` | One Compose file per service, joined by `compose.yaml`; NATS config |
+| `bench/` | Benchmark runners and results |
+| `scripts/` | Protobuf generation and the integration smoke tests |
 
 ## Prerequisites
 
 - **Docker** with Compose v2.20+ (for `include`)
-- **[uv](https://docs.astral.sh/uv/)** for Python (3.10–3.12; the pinned dependencies don't ship wheels for 3.13)
+- **[uv](https://docs.astral.sh/uv/)** for Python 3.10–3.12
 - **Node.js 18+**
 - **[pre-commit](https://pre-commit.com/)** for the formatting hooks
+- A C++20 compiler and CMake 3.25+ only for `core/`
 
-## Installation & Running
+## Running
 
-### Whole stack with Docker
-
-```bash
-docker compose up -d --build --wait
-```
-
-This starts Redis and the backend on port 8000. If something else already uses a port, set `LEGACY_PORT` or `REDIS_PORT`, for example `LEGACY_PORT=8001 docker compose up -d --build --wait`.
-
-### Backend without Docker
-
-Needs a Redis server on `localhost:6379`.
+### The stack with live feeds
 
 ```bash
-cd services/legacy
-uv sync
-uv run uvicorn main_server:app --reload --port 8000
+docker compose --profile feeds up -d --build --wait
 ```
 
-The backend will start simulating data immediately upon launch.
+This starts NATS, ingest (Kraken BTC-USD and ETH-USD), analytics and the gateway on port 8080. Without `--profile feeds` everything but ingest starts, and you can replay a recording into it instead:
 
-### Frontend
+```bash
+bash scripts/gen_proto.sh
+uv run --project services/ingest python -m ingest.service --bus nats://localhost:4222 --speed 1 \
+  --replay services/ingest/tests/fixtures/kraken_btcusd.jsonl.gz kraken:BTC-USD
+```
+
+If a port is taken, set `GATEWAY_PORT`, `NATS_PORT` or `NATS_MONITOR_PORT`.
+
+### The dashboard
 
 ```bash
 cd web
 npm install
+npm run gen   # TypeScript code from proto/
 npm run dev
 ```
 
-Open your browser to `http://localhost:5173`.
-
-### Formatting hooks
-
-```bash
-pre-commit install
-```
-
-Every commit then runs ruff, ruff-format and Prettier on the files it touches.
-
-### Configuration
-
-Copy `services/legacy/.env.example` to `services/legacy/.env` and `web/.env.example` to `web/.env` to override the defaults:
+Open `http://localhost:5173`. Copy `web/.env.example` to `web/.env` to change the defaults:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `REDIS_URL` | `redis://localhost:6379` | Redis connection used for Pub/Sub |
-| `CORS_ORIGINS` | `http://localhost:5173` | Comma-separated origins allowed to call the REST API |
-| `VITE_WS_URL` | `ws://localhost:8000` | Backend WebSocket base URL used by the dashboard |
+| `VITE_GATEWAY_URL` | `ws://localhost:8080` | Gateway WebSocket base URL |
+| `VITE_DEFAULT_VENUE` | `kraken` | Feed shown on load |
+| `VITE_DEFAULT_SYMBOL` | `BTC-USD` | Feed shown on load |
 
-## Architecture Overview
+### Checks
 
-1.  **Data Simulator**: Generates prices with a driftless geometric Brownian motion (5 bps per tick), plus a random spread and depth.
-2.  **Ingestion Engine**: Drains the queue in batches of up to 500 ticks, updates per-symbol analytics, and serializes with orjson.
-3.  **Broadcast Layer**: Publishes each tick to `market_data_feed:<SYMBOL>` via a Redis pipeline. If Redis is unavailable, ticks are dropped and publishing retries with backoff.
-4.  **WebSocket Gateway**: `/ws/stream/{symbol}` subscribes to that symbol's channel and forwards messages; unknown symbols are rejected.
-5.  **Client**: Keeps the newest message per 100ms window, updates the stat cards, order book, and a 100-point chart.
+```bash
+pre-commit install   # ruff, ruff-format, Prettier and clang-format on every commit
+make check           # lint, typecheck and tests for every Python service and the web app
+make cpp-test        # C++ tests (add -DBOOKCORE_SANITIZE=ON for ASan + UBSan)
+make bench-cpp       # C++ benchmarks and the Python comparison
+```
 
-## Performance Testing
-
-- **Backend Latency & Throughput**: Every 5 seconds the server logs the P95 latency from tick generation to Redis publish, and the achieved ticks/sec. Actual throughput depends on your CPU; the generator and pipeline share one event loop.
-- **Scalability Test**: The "Run Client-Side Scalability Test" button opens 1000 WebSocket connections from the browser and shows how many opened or failed. Browsers cap WebSockets per tab, so use a dedicated load-testing tool for real concurrency numbers.
+CI runs the same checks, plus the C++ build under sanitizers and an integration job that starts the Compose stack and replays a Kraken recording through ingest, NATS, analytics and the gateway.
 
 ## License
 

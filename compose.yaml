@@ -3,8 +3,6 @@
 name: rtd
 
 include:
-  - deploy/compose/redis.yaml
-  - deploy/compose/legacy.yaml
   - deploy/compose/nats.yaml
   - deploy/compose/ingest.yaml
   - deploy/compose/analytics.yaml
