@@ -14,6 +14,9 @@ export default function Candles() {
       layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: '#94a3b8' },
       grid: { vertLines: { color: '#1e293b' }, horzLines: { color: '#1e293b' } },
       timeScale: { timeVisible: true, secondsVisible: true },
+      // The wheel and vertical swipes scroll the page, not the chart; drag still pans it.
+      handleScroll: { mouseWheel: false, vertTouchDrag: false },
+      handleScale: { mouseWheel: false },
       autoSize: true,
     });
     const series: ISeriesApi<'Candlestick'> = chart.addCandlestickSeries({

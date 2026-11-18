@@ -38,8 +38,14 @@ export default function Heatmap() {
         ctx.clearRect(0, 0, width, HEIGHT);
         lastMidY = null;
       }
-      // Scroll everything one column left, then paint the new column on the right.
+      // Scroll everything one column left, then paint the new column on the right. The copy is
+      // in device pixels (identity transform), and 'copy' replaces what is there instead of
+      // blending over it; otherwise the image grows by dpr every column and old cells smear.
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.globalCompositeOperation = 'copy';
       ctx.drawImage(canvas, -COLUMN_PX * dpr, 0);
+      ctx.restore();
       const x = width - COLUMN_PX;
       ctx.clearRect(x, 0, COLUMN_PX, HEIGHT);
       for (const cell of cellsFor(column, center, halfRange, HEIGHT)) {
