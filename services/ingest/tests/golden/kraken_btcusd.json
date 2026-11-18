@@ -1,0 +1,31 @@
+{
+ "events": 3472,
+ "every": 1000,
+ "hashes": [
+  [
+   1001,
+   "kraken/BTC-USD",
+   "0a1698f7700b3e5084324822dbd1118a9a0f4cb3c79e7fed9dc440405029f4ba"
+  ],
+  [
+   2000,
+   "kraken/BTC-USD",
+   "cd33b2a5094ac01814f43bcc6fe8a9c1a8d3dd9e4f71daed20e368c86ce7132e"
+  ],
+  [
+   3000,
+   "kraken/BTC-USD",
+   "2c1c03b646a4d3f3d1fff7d718f8b9928d7368e5a7673e0d9b07ef454b05619c"
+  ],
+  [
+   3471,
+   "kraken/BTC-USD",
+   "577ea1b37da3d2ea3a5fd929d4d70410ff8581f2eaa0b77d7c0279d615adb1b5"
+  ],
+  [
+   3472,
+   "kraken/BTC-USD",
+   "87d86e788a614cbf4813d08c49ef0264dd23952df7db1c6f5577f8d9c784bd28"
+  ]
+ ]
+}

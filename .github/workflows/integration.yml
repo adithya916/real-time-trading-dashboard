@@ -29,6 +29,7 @@ jobs:
               - 'scripts/analytics_smoke.py'
               - 'scripts/gateway_smoke.py'
               - 'scripts/history_smoke.py'
+              - 'scripts/replay_smoke.py'
               - 'proto/**'
               - '.github/workflows/integration.yml'
 
@@ -73,6 +74,11 @@ jobs:
           python scripts/history_smoke.py http://localhost:8080 services/ingest/tests/fixtures/kraken_btcusd.jsonl.gz
       - name: The gateway serves the replayed book over WebSocket
         run: uv run --project services/gateway --frozen --python 3.12 python scripts/gateway_smoke.py ws://localhost:8080/ws/kraken/BTC-USD
+      - name: A recorded Parquet session replayed through the bus rebuilds the golden books
+        run: |
+          uv run --project services/recorder --frozen --python 3.12 python -m recorder binance BTC-USDT             --from-recording services/ingest/tests/fixtures/binance_btcusdt.jsonl.gz --root /tmp/parquet
+          uv run --project services/recorder --frozen --python 3.12 python -m recorder.replay             --root /tmp/parquet --bus nats://localhost:4222 --speed 50 binance:BTC-USDT
+          uv run --project services/recorder --frozen --python 3.12 python scripts/replay_smoke.py             nats://localhost:4222 binance BTC-USDT services/ingest/tests/golden/binance_btcusdt.json
       - name: Build the ingest image
         run: docker compose --profile feeds build ingest
       - name: Logs on failure

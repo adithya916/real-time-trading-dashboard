@@ -65,3 +65,9 @@
 - `gateway --db`: `GET /history/candles?venue&symbol&interval=1m|5m|1h&limit` returns candles oldest first, or 503 when there is no database.
 - The integration job replays the Kraken recording and checks every 1 m, 5 m and 1 h candle against a DuckDB recomputation of the same trades.
 - The candle chart has 1s / 1m / 5m / 1h. Longer intervals load history and keep the last bar moving with the live one-second candles; with no database (demo mode) they are built from live data only.
+
+## Replay
+
+- `mdcommon.clock`: a `Clock` interface. Live code uses wall time; `ReplayClock` plays event time at any speed, scheduling each event against the first so per-event overhead never accumulates as drift. Replayed adapters stamp `ts_recv_ns` from it, so a recording replayed or converted keeps its recorded receive times.
+- `python -m recorder.replay --root data --speed N venue:SYMBOLS`: recorded Parquet back onto the bus, feeds merged by receive time, envelopes unchanged apart from `ts_bus_ns`, and the snapshot bucket refreshed about once a second so a gateway can join mid-replay. `python -m recorder --from-recording` turns a raw venue recording into Parquet offline.
+- Golden replay: `ingest.book.golden` hashes each book (SHA-256 over integer ticks and lots) every 1,000 level updates and before each reset. `services/ingest/tests/golden/` pins the hashes for both recordings, and three paths must reproduce them: ingest's replay (ingest tests), record-to-Parquet-and-replay byte for byte (recorder tests), and Parquet replayed through NATS and read back from the JetStream stream (integration).
