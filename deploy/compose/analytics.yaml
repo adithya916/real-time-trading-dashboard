@@ -3,7 +3,10 @@ services:
     build:
       context: ../..
       dockerfile: services/analytics/Dockerfile
+    command: ["--bus", "nats://nats:4222", "--db", "postgresql://md:${TIMESCALE_PASSWORD:-md-local-only}@timescale:5432/md"]
     restart: unless-stopped
     depends_on:
       nats:
+        condition: service_healthy
+      timescale:
         condition: service_healthy

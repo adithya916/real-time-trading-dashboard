@@ -8,6 +8,7 @@ dependencies = [
     "ingest",
     "fastapi==0.115.6",
     "uvicorn[standard]==0.34.0",
+    "asyncpg==0.30.0",
 ]
 
 [tool.uv.sources]
@@ -51,5 +52,5 @@ module = ["mdcommon.gen.*"]
 ignore_errors = true
 
 [[tool.mypy.overrides]]
-module = ["nats", "nats.*"]
+module = ["nats", "nats.*", "asyncpg", "asyncpg.*"]
 ignore_missing_imports = true

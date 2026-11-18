@@ -1,3 +1,4 @@
+import { DEFAULT_SYMBOL, DEFAULT_VENUE, streamUrl } from './config';
 import { createStore, useStore } from './store';
 import type { MarketView } from './worker/book';
 import type { FromWorker, ToWorker } from './worker/marketWorker';
@@ -39,6 +40,19 @@ export function startMarket(url: string): () => void {
 
 export function connectTo(url: string): void {
   worker?.postMessage({ type: 'connect', url } satisfies ToWorker);
+}
+
+export interface Feed {
+  venue: string;
+  symbol: string;
+}
+
+// The feed on screen, for panels that fetch more than the stream carries (candle history).
+export const feedStore = createStore<Feed>({ venue: DEFAULT_VENUE, symbol: DEFAULT_SYMBOL });
+
+export function selectFeed(feed: Feed): void {
+  feedStore.set(feed);
+  connectTo(streamUrl(feed.venue, feed.symbol));
 }
 
 export const useMarket = <S>(select: (view: MarketView) => S): S => useStore(marketStore, select);

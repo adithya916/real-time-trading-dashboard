@@ -1,6 +1,6 @@
 """Run the gateway.
 
-python -m gateway --bus nats://localhost:4222 --port 8080
+python -m gateway --bus nats://localhost:4222 --port 8080 [--db postgresql://...]
 python -m gateway --demo RECORDING.jsonl.gz kraken:BTC-USD     # no NATS: replay on a loop
 """
 
@@ -13,6 +13,7 @@ from pathlib import Path
 import uvicorn
 
 from gateway.app import create_app
+from gateway.history import History
 from gateway.hub import Hub
 
 
@@ -21,6 +22,7 @@ def main() -> None:
     parser.add_argument("--bus", default="nats://localhost:4222")
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8080)
+    parser.add_argument("--db", help="TimescaleDB URL for /history/candles")
     parser.add_argument(
         "--demo",
         nargs=2,
@@ -35,7 +37,8 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
     if not args.demo:
-        uvicorn.run(create_app(bus_url=args.bus), host=args.host, port=args.port)
+        app = create_app(bus_url=args.bus, history=History(args.db))
+        uvicorn.run(app, host=args.host, port=args.port)
         return
 
     from gateway.demo import run_demo
@@ -49,6 +52,7 @@ def main() -> None:
     hub = Hub()
     app = create_app(
         hub,
+        history=History(args.db),
         background=[
             lambda: run_demo(hub, recording, venue, symbols.split(","), args.speed),
         ],

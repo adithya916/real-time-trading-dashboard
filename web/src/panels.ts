@@ -21,7 +21,7 @@ export const panels: Panel[] = [
   { id: 'book', title: 'Order book', span: 4, component: lazy(() => import('./panels/Book')) },
   {
     id: 'candles',
-    title: 'One-second candles',
+    title: 'Candles',
     span: 8,
     component: lazy(() => import('./panels/Candles')),
   },

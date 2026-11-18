@@ -28,6 +28,7 @@ jobs:
               - 'scripts/ingest_smoke.py'
               - 'scripts/analytics_smoke.py'
               - 'scripts/gateway_smoke.py'
+              - 'scripts/history_smoke.py'
               - 'proto/**'
               - '.github/workflows/integration.yml'
 
@@ -51,12 +52,25 @@ jobs:
         run: bash scripts/gen_proto.sh
       - name: NATS JetStream smoke test
         run: uv run --project services/common --frozen --python 3.12 python scripts/bus_smoke.py nats://localhost:4222
+      - name: Wait until analytics and the gateway are subscribed
+        # Core NATS doesn't replay, so a consumer that subscribes after the replay misses it.
+        run: |
+          for i in $(seq 1 60); do
+            names=$(curl -fsS 'http://localhost:8222/connz' | jq -r '.connections[] | select(.subscriptions > 0) | .name')
+            if echo "$names" | grep -qx analytics && echo "$names" | grep -qx gateway; then exit 0; fi
+            sleep 1
+          done
+          echo "subscribed: $names"; exit 1
       - name: Replay a Kraken recording through ingest into NATS
         run: |
           uv run --project services/ingest --frozen --python 3.12 python -m ingest.service             --bus nats://localhost:4222 --replay services/ingest/tests/fixtures/kraken_btcusd.jsonl.gz kraken:BTC-USD
           uv run --project services/ingest --frozen --python 3.12 python scripts/ingest_smoke.py nats://localhost:4222
       - name: Analytics published metrics for the replayed book
         run: uv run --project services/ingest --frozen --python 3.12 python scripts/analytics_smoke.py nats://localhost:4222
+      - name: Candle history from TimescaleDB matches a DuckDB recomputation
+        run: >-
+          uv run --project services/ingest --frozen --python 3.12 --with duckdb==1.1.3
+          python scripts/history_smoke.py http://localhost:8080 services/ingest/tests/fixtures/kraken_btcusd.jsonl.gz
       - name: The gateway serves the replayed book over WebSocket
         run: uv run --project services/gateway --frozen --python 3.12 python scripts/gateway_smoke.py ws://localhost:8080/ws/kraken/BTC-USD
       - name: Build the ingest image
