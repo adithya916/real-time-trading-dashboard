@@ -101,6 +101,7 @@ async def run(
         if replay:
             replayer = ReplayConnector(replay, speed)
             kwargs["connect"] = replayer
+            kwargs["clock"] = replayer.clock.now_ns  # recorded receive times, not now
             if venue == "binance":
                 kwargs["fetch"] = replayer.fetch
         adapter = load(venue)(symbols, **kwargs)

@@ -75,6 +75,17 @@ uv run --project services/ingest python -m ingest.service --bus nats://localhost
 
 If a port is taken, set `GATEWAY_PORT`, `NATS_PORT`, `NATS_MONITOR_PORT` or `TIMESCALE_PORT`. The database password defaults to a local-only value; set `TIMESCALE_PASSWORD` anywhere else.
 
+### Record and replay
+
+```bash
+# Record live (or convert a raw venue recording offline with --from-recording file.jsonl.gz)
+uv run --project services/recorder python -m recorder kraken BTC-USD --seconds 600 --root data
+# Publish it onto the bus again, 10x faster than it happened
+uv run --project services/recorder python -m recorder.replay --root data --speed 10 kraken:BTC-USD
+```
+
+A replay publishes the recorded envelopes unchanged (same seq and venue timestamps) on the same subjects, so analytics, the candle history and the dashboard treat it like the live session. Golden files in `services/ingest/tests/golden/` pin a hash of each book every 1,000 level updates and at the end of each session. Replaying a recording through ingest, through Parquet, or through the bus in CI must reproduce them exactly.
+
 ### Without Docker: demo mode
 
 The gateway can replay a recording into itself, with the analytics computed in the same process and no NATS:
