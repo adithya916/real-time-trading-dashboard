@@ -3,6 +3,30 @@ revision = 5
 requires-python = ">=3.10, <3.13"
 
 [[package]]
+name = "analytics"
+version = "0.1.0"
+source = { editable = "../analytics" }
+dependencies = [
+    { name = "ingest" },
+    { name = "mdcommon" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "ingest", editable = "../ingest" },
+    { name = "mdcommon", editable = "../common" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "hypothesis", specifier = "==6.122.3" },
+    { name = "mypy", specifier = "==1.14.1" },
+    { name = "pytest", specifier = "==8.3.4" },
+    { name = "pytest-timeout", specifier = "==2.3.1" },
+    { name = "types-protobuf", specifier = "==5.29.1.20241207" },
+]
+
+[[package]]
 name = "annotated-types"
 version = "0.8.0"
 source = { registry = "https://pypi.org/simple" }
@@ -82,6 +106,7 @@ wheels = [
 name = "gateway"
 version = "0.1.0"
 source = { editable = "." }
+default-groups = ["demo", "dev"]
 dependencies = [
     { name = "fastapi" },
     { name = "ingest" },
@@ -90,6 +115,9 @@ dependencies = [
 ]
 
 [package.dev-dependencies]
+demo = [
+    { name = "analytics" },
+]
 dev = [
     { name = "httpx" },
     { name = "mypy" },
@@ -107,6 +135,7 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
+demo = [{ name = "analytics", editable = "../analytics" }]
 dev = [
     { name = "httpx", specifier = "==0.28.1" },
     { name = "mypy", specifier = "==1.14.1" },

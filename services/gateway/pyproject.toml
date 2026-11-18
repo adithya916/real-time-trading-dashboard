@@ -13,8 +13,12 @@ dependencies = [
 [tool.uv.sources]
 mdcommon = { path = "../common", editable = true }
 ingest = { path = "../ingest", editable = true }
+analytics = { path = "../analytics", editable = true }
 
 [dependency-groups]
+# Demo mode (python -m gateway --demo) computes metrics in-process with the analytics code.
+# Left out of the image: the Dockerfile syncs with --no-group demo.
+demo = ["analytics"]
 dev = [
     "pytest==8.3.4",
     "pytest-timeout==2.3.1",
@@ -22,6 +26,9 @@ dev = [
     "mypy==1.14.1",
     "types-protobuf==5.29.1.20241207",
 ]
+
+[tool.uv]
+default-groups = ["dev", "demo"]
 
 [build-system]
 requires = ["hatchling==1.27.0"]

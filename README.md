@@ -74,6 +74,17 @@ uv run --project services/ingest python -m ingest.service --bus nats://localhost
 
 If a port is taken, set `GATEWAY_PORT`, `NATS_PORT` or `NATS_MONITOR_PORT`.
 
+### Without Docker: demo mode
+
+The gateway can replay a recording into itself, with the analytics computed in the same process and no NATS:
+
+```bash
+make demo
+# or: cd services/gateway && uv run python -m gateway --demo ../ingest/tests/fixtures/kraken_btcusd.jsonl.gz kraken:BTC-USD
+```
+
+It plays 45 s of recorded Kraken BTC/USD at the recorded pace, on a loop, on port 8080. Viewers get exactly the frames the full stack would send, so the dashboard below works against it unchanged.
+
 ### The dashboard
 
 ```bash

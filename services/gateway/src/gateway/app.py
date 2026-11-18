@@ -14,7 +14,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable, Coroutine, Sequence
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -82,7 +82,12 @@ async def bus_forever(hub: Hub, bus_url: str) -> None:
         await nc.drain()
 
 
-def create_app(hub: Hub | None = None, bus_url: str | None = None) -> FastAPI:
+def create_app(
+    hub: Hub | None = None,
+    bus_url: str | None = None,
+    background: Sequence[Callable[[], Coroutine[Any, Any, Any]]] = (),
+) -> FastAPI:
+    """`background` coroutines run for the app's lifetime, e.g. the demo replay."""
     hub = hub or Hub()
 
     @asynccontextmanager
@@ -90,6 +95,7 @@ def create_app(hub: Hub | None = None, bus_url: str | None = None) -> FastAPI:
         tasks = [asyncio.create_task(tick_forever(hub))]
         if bus_url:
             tasks.append(asyncio.create_task(bus_forever(hub, bus_url)))
+        tasks += [asyncio.create_task(start()) for start in background]
         yield
         for task in tasks:
             task.cancel()

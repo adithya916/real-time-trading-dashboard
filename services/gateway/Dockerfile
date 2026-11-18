@@ -12,9 +12,11 @@ COPY services/common services/common
 RUN bash scripts/gen_proto.sh
 
 COPY services/ingest services/ingest
+# Only the lockfile needs it: the demo group is not installed.
+COPY services/analytics/pyproject.toml services/analytics/pyproject.toml
 COPY services/gateway services/gateway
 WORKDIR /app/services/gateway
-RUN uv sync --frozen --no-dev --no-editable
+RUN uv sync --frozen --no-dev --no-group demo --no-editable
 
 ENV PATH="/app/services/gateway/.venv/bin:$PATH"
 EXPOSE 8080
