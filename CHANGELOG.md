@@ -78,3 +78,10 @@
 - Market-shape tests: the book is never crossed, the median spread is under 1 bp, limit and market orders arrive at the configured rates, buyers and sellers take liquidity about equally, the same seed gives byte-identical streams, and the snapshot equals the book built from the stream. Limit orders that take stale quotes after fair value moves are a second source of trades, as faster traders would be.
 - External orders (for the paper trader) share the book through `submit_external`/`cancel_external`, with ids from 2^48 and fills reported as taker or maker.
 - In the default Compose stack. The image compiles the C++ core in a build stage. `ci-python` builds and tests it, and the integration job checks a simulated book reaches a browser through the gateway.
+
+## Paper trader
+
+- The simulator takes orders: request/reply on `orders.sim.<symbol>` (JSON: new limit, IOC or market orders, and cancels) and fills on `fills.sim.<symbol>.<account>`, which is the only place a fill is reported, so it is counted exactly once. The desk maps each trader's own order ids to engine ids.
+- `services/papertrader`: an imbalance market-maker. It quotes `microprice + imbalance x 6 ticks - position x 0.1 ticks/lot`, ±8 ticks, post-only, and stops buying or selling at ±200 lots and quoting altogether below a loss limit. PnL is by average cost in integer ticks and lots. The trader is a state machine free of I/O, driven by NATS in the service and directly in tests.
+- `StrategyState` joins the schema (subject `md.<venue>.<symbol>.strategy`, its own seq). The gateway forwards the latest one each tick like analytics, the worker keeps a PnL history, and a "Paper trader" panel shows position, realized, unrealized and total PnL, the quotes, the fills and a PnL line.
+- Tests: PnL against cash flow (Hypothesis), quote skew and limits, the trader's requote and halt logic, and an end-to-end run against the real simulator and C++ engine. Over 20,000 simulated actions it made 521 fills, all as maker, and lost 0.94: picked off by faster flow, as a naive maker is. Integration checks the paper trader fills on the simulator and its state reaches a browser through the gateway.

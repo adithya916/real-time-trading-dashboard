@@ -16,6 +16,8 @@ export const EMPTY_VIEW: MarketView = {
   rttP50: null,
   rttP99: null,
   framesPerSecond: 0,
+  strategy: null,
+  pnlHistory: [],
 };
 
 export const marketStore = createStore<MarketView>(EMPTY_VIEW);

@@ -14,9 +14,12 @@ mdcommon = { path = "../common", editable = true }
 ingest = { path = "../ingest", editable = true }
 # Built from source with scikit-build-core (CMake and a C++20 compiler).
 bookcore = { path = "../../core" }
+papertrader = { path = "../papertrader", editable = true }
 
 [dependency-groups]
 dev = [
+    # End-to-end test: the paper trader against this venue.
+    "papertrader",
     "pytest==8.3.4",
     "pytest-timeout==2.3.1",
     "mypy==1.14.1",

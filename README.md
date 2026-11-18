@@ -13,6 +13,7 @@ recordings ───┘   (adapters,  JetStream                          v
 ```
 
 - **simulator** is a venue of its own (`sim`: BTC-SIM, ETH-SIM). Zero-intelligence agents send random limit, market and cancel orders around a random-walk fair value, and the C++ matching engine matches them, so trades and the book come from real matching. It runs in the default stack, so there is always a market to watch.
+- **papertrader** market-makes BTC-SIM: it quotes around the microprice, leans with the book's imbalance and against its own inventory, and stops at position and loss limits. Orders go to the simulator's order desk over NATS request/reply, and fills come back on their own subject. Its position and PnL are published as `StrategyState` and shown in a dashboard panel.
 - **ingest** runs one adapter per venue. Kraken books are verified against the venue's CRC32 checksum on every message; Binance books are synced to a REST snapshot by the documented `U`/`u` rules. A sequence gap or checksum mismatch emits a `BookReset` and resyncs. Every envelope carries a gapless `seq` per symbol and per-hop timestamps.
 - **NATS JetStream** keeps 24 h of the stream (`MD` on `md.>`) and the latest snapshot of each book in the `snap` KV bucket, so a consumer that starts late loads the snapshot and applies the stream from the next `seq`.
 - **analytics** mirrors every book and publishes mid, microprice, spread, L1/L5 imbalance, depth within 10 bps, realized volatility (1/10/60 s), VWAP and TWAP up to 10 times a second.
@@ -44,7 +45,8 @@ Driven from Python one message at a time, the C++ book is still slower than the 
 | `services/analytics/` | Metrics computed from the bus |
 | `services/recorder/` | Parquet recorder |
 | `services/gateway/` | Conflating WebSocket gateway |
-| `services/simulator/` | Agent-based simulated venue on the C++ matching engine |
+| `services/simulator/` | Agent-based simulated venue on the C++ matching engine, with an order desk |
+| `services/papertrader/` | Imbalance market-maker with PnL and risk limits |
 | `core/` | C++20 `bookcore`: `L2Book`, `MatchingEngine`, pybind11 bindings, tests, benchmarks |
 | `web/` | React dashboard |
 | `deploy/` | One Compose file per service, joined by `compose.yaml`; NATS config |
@@ -67,7 +69,7 @@ Driven from Python one message at a time, the C++ book is still slower than the 
 docker compose --profile feeds up -d --build --wait
 ```
 
-This starts NATS, TimescaleDB, the simulator, ingest (Kraken BTC-USD and ETH-USD), analytics and the gateway on port 8080. Without `--profile feeds` everything but the live feeds starts (the simulated venue still trades), and you can replay a recording into it as well:
+This starts NATS, TimescaleDB, the simulator, the paper trader, ingest (Kraken BTC-USD and ETH-USD), analytics and the gateway on port 8080. Without `--profile feeds` everything but the live feeds starts (the simulated venue still trades), and you can replay a recording into it as well:
 
 ```bash
 bash scripts/gen_proto.sh

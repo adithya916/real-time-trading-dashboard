@@ -1,4 +1,4 @@
-"""Run the simulated venue and publish it to the bus as venue "sim".
+"""Run the simulated venue: publish it to the bus as venue "sim" and take orders (orders.py).
 
 python -m simulator --bus nats://localhost:4222 BTC-SIM ETH-SIM [--seed 1] [--speed 1]
 """
@@ -8,9 +8,11 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import time
 
 from ingest.service import publish
 from simulator.adapter import INSTRUMENTS, SimulatorAdapter
+from simulator.orders import OrderDesk, serve
 
 log = logging.getLogger(__name__)
 
@@ -20,9 +22,11 @@ async def run(symbols: list[str], bus_url: str, seed: int, speed: float) -> None
 
     bus = await BusPublisher.connect(bus_url)
     adapter = SimulatorAdapter(symbols, seed=seed, speed=speed)
+    pump = await serve(OrderDesk(adapter, time.time_ns), bus.nc)
     try:
         await publish(adapter, bus)
     finally:
+        pump.cancel()
         await bus.close()
 
 

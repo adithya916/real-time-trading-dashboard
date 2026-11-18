@@ -1,0 +1,13 @@
+services:
+  papertrader:
+    # Market-makes BTC-SIM on the simulated venue; its PnL shows on the dashboard.
+    build:
+      context: ../..
+      dockerfile: services/papertrader/Dockerfile
+    command: ["--bus", "nats://nats:4222", "BTC-SIM"]
+    restart: unless-stopped
+    depends_on:
+      nats:
+        condition: service_healthy
+      simulator:
+        condition: service_started

@@ -6,7 +6,7 @@ the mirror stops, buffers what keeps arriving, and resyncs from the snapshot buc
 by ingest about once a second) plus the buffered envelopes after the snapshot's seq.
 
 Between ticks the mirror collects what changed: the latest size per changed level, every trade,
-and the latest analytics. The hub turns that into one set of frames per tick.
+and the latest analytics and strategy state. The hub turns that into one set of frames per tick.
 """
 
 from __future__ import annotations
@@ -32,12 +32,16 @@ class Mirror:
         self.pending: dict[tuple[BookSide, int], int] = {}
         self.trades: list[bytes] = []
         self.analytics: bytes | None = None
+        self.strategy: bytes | None = None
         self.resynced = False  # a new snapshot replaced the book; viewers need it whole
 
     def on_envelope(self, envelope: Envelope) -> bool:
         """Apply one envelope. Returns True when the mirror needs a snapshot from the bucket."""
         if envelope.HasField("analytics"):
             self.analytics = envelope.SerializeToString()
+            return False
+        if envelope.HasField("strategy"):
+            self.strategy = envelope.SerializeToString()
             return False
         if envelope.HasField("snapshot"):
             self.load_snapshot(envelope)
@@ -94,8 +98,9 @@ class Mirror:
         envelope.snapshot.CopyFrom(to_snapshot(self.book, self.price_scale, self.size_scale))
         return envelope.SerializeToString()
 
-    def drain(self) -> tuple[bytes | None, list[bytes], bytes | None, bool]:
-        """(coalesced delta frame, trade frames, analytics frame, resynced) since the last call."""
+    def drain(self) -> tuple[bytes | None, list[bytes], list[tuple[bytes, str]], bool]:
+        """(coalesced delta frame, trade frames, latest (frame, kind) of analytics and strategy,
+        resynced) since the last call."""
         delta_frame = None
         if self.pending and not self.resynced:
             envelope = Envelope(venue=self.venue, symbol=self.symbol, seq=self.seq)
@@ -108,6 +113,12 @@ class Mirror:
                 )
             )
             delta_frame = envelope.SerializeToString()
-        result = (delta_frame, self.trades, self.analytics, self.resynced)
-        self.pending, self.trades, self.analytics, self.resynced = {}, [], None, False
+        latest = [
+            (frame, kind)
+            for frame, kind in ((self.analytics, "analytics"), (self.strategy, "strategy"))
+            if frame is not None
+        ]
+        result = (delta_frame, self.trades, latest, self.resynced)
+        self.pending, self.trades, self.resynced = {}, [], False
+        self.analytics = self.strategy = None
         return result
