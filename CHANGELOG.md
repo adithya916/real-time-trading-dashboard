@@ -51,3 +51,8 @@
 ## Demo mode
 
 - `python -m gateway --demo <recording> <venue:symbols>` (`make demo`): the gateway plays a recording through the real venue adapter at the recorded pace, on a loop, and computes the analytics in-process, with no NATS or Docker. Seqs keep counting across loops and timestamps are restamped with the current time, so the dashboard runs against it unchanged. The analytics code is a `demo` dependency group, left out of the gateway image.
+## Dashboard fixes found with the demo
+
+- Depth heatmap: the scroll-left copy ran under the device-pixel-ratio transform, so at any ratio other than 1 the image grew every column and only the newest column stayed visible; it also blended over the old pixels instead of replacing them. The copy now runs in device pixels with the `copy` composite mode.
+- The candle chart no longer takes the mouse wheel or vertical swipes, so the page scrolls over it; dragging still pans.
+- Layout: the trade tape sits beside the candles and the heatmap spans the full width (more history), so no grid cell is left empty.
