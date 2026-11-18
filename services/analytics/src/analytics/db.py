@@ -84,31 +84,48 @@ def trade_row(envelope: Envelope, price_scale: int, size_scale: int) -> Row | No
 
 
 class TradeWriter:
-    """Buffers trade rows and writes them in batches."""
+    """Buffers trade rows and writes them in batches.
 
-    def __init__(self, pool: Any, *, batch: int = 1000, every_s: float = 1.0) -> None:
+    The pool may arrive later (`pool = None` until the database is up and migrated): rows are
+    kept meanwhile, up to max_buffered, so trades from the first seconds aren't lost.
+    """
+
+    def __init__(
+        self,
+        pool: Any = None,
+        *,
+        batch: int = 1000,
+        every_s: float = 1.0,
+        max_buffered: int = 200_000,
+    ) -> None:
         self.pool = pool
         self.batch = batch
         self.every_s = every_s
+        self.max_buffered = max_buffered
         self.rows: list[Row] = []
         self.written = 0
+        self.dropped = 0
         self._last_flush = time.monotonic()
 
     def add(self, row: Row | None) -> None:
-        if row is not None:
-            self.rows.append(row)
+        if row is None:
+            return
+        if len(self.rows) >= self.max_buffered:
+            self.dropped += 1
+            return
+        self.rows.append(row)
 
     def due(self) -> bool:
-        return len(self.rows) >= self.batch or (
-            bool(self.rows) and time.monotonic() - self._last_flush >= self.every_s
-        )
+        if self.pool is None or not self.rows:
+            return False
+        return len(self.rows) >= self.batch or time.monotonic() - self._last_flush >= self.every_s
 
     async def flush(self) -> int:
         """Write the buffered rows. Returns how many were new."""
+        if self.pool is None or not self.rows:
+            return 0
         rows, self.rows = self.rows, []
         self._last_flush = time.monotonic()
-        if not rows:
-            return 0
         async with self.pool.acquire() as conn, conn.transaction():
             await conn.execute(
                 "CREATE TEMP TABLE IF NOT EXISTS trades_in (LIKE trades) ON COMMIT DELETE ROWS"

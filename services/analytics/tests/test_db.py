@@ -128,6 +128,20 @@ def test_writer_copies_a_batch_and_counts_new_rows() -> None:
     assert len(conn.copied) == 1
 
 
+def test_rows_wait_for_the_pool_and_the_buffer_is_capped() -> None:
+    writer = TradeWriter(None, batch=1, every_s=0.0, max_buffered=2)
+    for i in range(3):
+        writer.add(trade_row(trade(str(i)), 1, 8))
+    assert (len(writer.rows), writer.dropped) == (2, 1)
+    assert not writer.due()
+    assert asyncio.run(writer.flush()) == 0 and len(writer.rows) == 2  # kept, not lost
+    conn = FakeConn(insert_status="INSERT 0 2")
+    writer.pool = FakePool(conn)
+    assert writer.due()
+    assert asyncio.run(writer.flush()) == 2
+    assert len(conn.copied[0][1]) == 2
+
+
 def test_writer_is_due_after_the_interval_even_with_a_small_batch() -> None:
     writer = TradeWriter(FakePool(FakeConn()), batch=1000, every_s=0.0)
     assert not writer.due()  # empty

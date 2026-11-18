@@ -52,6 +52,15 @@ jobs:
         run: bash scripts/gen_proto.sh
       - name: NATS JetStream smoke test
         run: uv run --project services/common --frozen --python 3.12 python scripts/bus_smoke.py nats://localhost:4222
+      - name: Wait until analytics and the gateway are subscribed
+        # Core NATS doesn't replay, so a consumer that subscribes after the replay misses it.
+        run: |
+          for i in $(seq 1 60); do
+            names=$(curl -fsS 'http://localhost:8222/connz?subs=1' | jq -r '.connections[] | select(.num_subscriptions > 0) | .name')
+            if echo "$names" | grep -qx analytics && echo "$names" | grep -qx gateway; then exit 0; fi
+            sleep 1
+          done
+          echo "subscribed: $names"; exit 1
       - name: Replay a Kraken recording through ingest into NATS
         run: |
           uv run --project services/ingest --frozen --python 3.12 python -m ingest.service             --bus nats://localhost:4222 --replay services/ingest/tests/fixtures/kraken_btcusd.jsonl.gz kraken:BTC-USD

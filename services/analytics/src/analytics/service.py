@@ -58,7 +58,8 @@ class AnalyticsState:
         return out
 
 
-async def connect_db(db_url: str) -> TradeWriter:
+async def connect_db(db_url: str, writer: TradeWriter) -> None:
+    """Connect and migrate, retrying until the database is up, then hand the pool to writer."""
     import asyncpg
 
     from analytics.db import migrate
@@ -73,7 +74,7 @@ async def connect_db(db_url: str) -> TradeWriter:
     async with pool.acquire() as conn:
         applied = await migrate(conn)
     log.info("analytics: database ready, %d migration(s) applied", len(applied))
-    return TradeWriter(pool)
+    writer.pool = pool
 
 
 async def run(bus_url: str, db_url: str | None = None) -> None:
@@ -81,7 +82,10 @@ async def run(bus_url: str, db_url: str | None = None) -> None:
 
     from mdcommon.bus import ensure_stream, subject_for
 
-    writer = await connect_db(db_url) if db_url else None
+    # Subscribe first and connect to the database alongside: core NATS doesn't replay, so
+    # waiting for a slow database start would lose the first trades. They wait in the writer.
+    writer = TradeWriter() if db_url else None
+    db_task = asyncio.create_task(connect_db(db_url, writer)) if db_url and writer else None
     nc = await nats.connect(bus_url, name="analytics", max_reconnect_attempts=-1)
     await ensure_stream(nc.jetstream())
     state = AnalyticsState()
@@ -108,6 +112,8 @@ async def run(bus_url: str, db_url: str | None = None) -> None:
                 except Exception as exc:  # keep publishing metrics while the database is away
                     log.warning("analytics: trade write failed (%r)", exc)
     finally:
+        if db_task:
+            db_task.cancel()
         if writer:
             await writer.flush()
         log.info("analytics: published %d envelopes", published)
