@@ -19,7 +19,7 @@ from typing import Any
 
 import bookcore
 from ingest.adapters.base import FeedAdapter
-from mdcommon.clock import ReplayClock
+from mdcommon.clock import Clock, ReplayClock
 from mdcommon.schema import Delta, Envelope, Snapshot
 from simulator.agents import FlowParams, SideName
 from simulator.market import Fill, Result, SimMarket
@@ -55,9 +55,11 @@ class SimulatorAdapter(FeedAdapter):
         max_actions: int | None = None,
         params: dict[str, FlowParams] | None = None,
         clock: Callable[[], int] = time.time_ns,
+        pace: Clock | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(symbols, clock=clock, **kwargs)
+        self.pace = pace  # what decides when each action is due; default ReplayClock(speed)
         catalog = params or INSTRUMENTS
         unknown = [s for s in self.symbols if s not in catalog]
         if unknown:
@@ -113,16 +115,19 @@ class SimulatorAdapter(FeedAdapter):
             market.flow.now_ns = start_ns
             yield self.wrap(symbol, market.snapshot(PRICE_SCALE, SIZE_SCALE), ts_exch_ns=start_ns)
 
-        clock = ReplayClock(self.speed)
+        clock = self.pace or ReplayClock(self.speed)
         pending = {symbol: market.next_action() for symbol, market in self.markets.items()}
         while self.max_actions is None or self.actions < self.max_actions:
+            symbol = min(pending, key=lambda s: pending[s].at_ns)
+            action = pending[symbol]
+            await clock.wait_for(action.at_ns)
+            # External orders change the book the moment they arrive, which can be while we
+            # wait. Their envelopes must go out before this action's, which the engine applies
+            # after them; otherwise a stale level from the order would overwrite a newer one.
             while not self._outbox.empty():
                 external = self._outbox.get_nowait()
                 for envelope in self._envelopes(external.symbol, external.result, self._clock()):
                     yield envelope
-            symbol = min(pending, key=lambda s: pending[s].at_ns)
-            action = pending[symbol]
-            await clock.wait_for(action.at_ns)
             market = self.markets[symbol]
             result = market.apply(action)
             if result.fills and self.on_fills:

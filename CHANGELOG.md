@@ -105,3 +105,7 @@
   - It pings every second, recording the round trip with coordinated-omission correction.
   - Results go to a CSV and a markdown table: connected, errors, closed by the gateway, frames and KiB per viewer per second, and p50/p99/p99.9/max of each.
 - `bench-load` workflow: vets and tests the Go code (with the race detector), starts the Compose stack and steps viewers up on the simulated BTC-SIM feed. Pull requests run a short ramp; a manual run takes custom steps up to 10,000. The table, the gateway's latency under load and container CPU and memory go on the run summary.
+
+## Fix: simulator book updates out of order
+
+- An external order (the paper trader's) changes the simulator's book the moment it arrives, which can be while the venue waits for its next agent action. Its book update sat in an outbox that was only emptied after that next action had been applied and published, so the two went out in the wrong order and the older one overwrote a level with a stale size. Viewers could then see a crossed book; the integration job caught one. The outbox is now emptied right after the wait, so updates go out in the order the engine applied them. A regression test places orders during the wait and checks the published book never crosses and ends equal to the engine's.

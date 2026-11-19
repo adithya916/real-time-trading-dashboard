@@ -96,3 +96,59 @@ def test_bad_requests_are_refused_without_touching_the_book() -> None:
     assert not desk.handle("NOPE", {"op": "new"})["ok"]
     assert not desk.handle(SYMBOL, {"op": "fly", "account": "mm", "id": 9})["ok"]
     assert adapter.markets[SYMBOL].engine.resting_orders() == resting + 1
+
+
+class OrdersArriveWhileWaiting:
+    """A pace that lets an outside trader act during the wait before some agent actions, the
+    way NATS callbacks run while the venue sleeps."""
+
+    def __init__(self, adapter: SimulatorAdapter, desk: OrderDesk) -> None:
+        self.adapter, self.desk, self.calls, self.next_id = adapter, desk, 0, 1
+
+    def now_ns(self) -> int:
+        return START
+
+    async def wait_for(self, event_ns: int) -> None:
+        self.calls += 1
+        if self.calls % 7 or not self.adapter.markets:
+            return
+        ask = best(self.adapter, bookcore.Side.ASK)
+        bid = best(self.adapter, bookcore.Side.BID)
+        # Alternate between resting at the touch (which agents then hit) and taking liquidity.
+        if self.calls % 14:
+            new(self.desk, self.next_id, "ask", "limit", ask - 1 if ask - 1 > bid else ask, 30)
+        else:
+            new(self.desk, self.next_id, "bid", "ioc", ask, 40)
+        self.next_id += 1
+
+
+def test_the_published_book_matches_the_engine_when_orders_arrive_mid_wait() -> None:
+    from ingest.book.pybook import BookSide, PyBook
+    from mdcommon.schema import Side
+
+    adapter = SimulatorAdapter([SYMBOL], seed=9, speed=None, max_actions=4000, clock=lambda: START)
+    desk = OrderDesk(adapter, clock=lambda: START)
+    adapter.pace = OrdersArriveWhileWaiting(adapter, desk)
+    book = PyBook()
+
+    async def run() -> None:
+        async with aclosing(adapter.stream()) as stream:
+            async for e in stream:
+                if e.HasField("snapshot"):
+                    book.clear()
+                    for lv in e.snapshot.bids:
+                        book.apply("bid", lv.price_ticks, lv.size_lots)
+                    for lv in e.snapshot.asks:
+                        book.apply("ask", lv.price_ticks, lv.size_lots)
+                elif e.HasField("delta"):
+                    for u in e.delta.updates:
+                        side: BookSide = "bid" if u.side == Side.SIDE_BID else "ask"
+                        book.apply(side, u.price_ticks, u.size_lots)
+                    top_bid, top_ask = book.best_bid(), book.best_ask()
+                    assert top_bid and top_ask and top_bid[0] < top_ask[0], f"crossed at {e.seq}"
+
+    asyncio.run(run())
+    snapshot = adapter.book_snapshot(SYMBOL)
+    assert snapshot is not None
+    assert [(lv.price_ticks, lv.size_lots) for lv in snapshot.bids] == book.top("bid")
+    assert [(lv.price_ticks, lv.size_lots) for lv in snapshot.asks] == book.top("ask")
