@@ -11,7 +11,10 @@ and the latest analytics and strategy state. The hub turns that into one set of 
 
 from __future__ import annotations
 
+import time
+
 from ingest.book.pybook import BookSide, PyBook, to_snapshot
+from mdcommon.latency import LATENCY
 from mdcommon.schema import Delta, Envelope, LevelUpdate, Side
 
 MAX_BUFFER = 50_000
@@ -33,6 +36,7 @@ class Mirror:
         self.trades: list[bytes] = []
         self.analytics: bytes | None = None
         self.strategy: bytes | None = None
+        self.first_pending_ns = 0  # arrival of the oldest change not yet sent
         self.resynced = False  # a new snapshot replaced the book; viewers need it whole
 
     def on_envelope(self, envelope: Envelope) -> bool:
@@ -82,6 +86,8 @@ class Mirror:
                 break
 
     def _apply(self, envelope: Envelope) -> None:
+        if not self.first_pending_ns:
+            self.first_pending_ns = time.time_ns()
         self.seq = envelope.seq
         if envelope.HasField("delta"):
             for update in envelope.delta.updates:
@@ -94,7 +100,9 @@ class Mirror:
             self.synced = False  # the next snapshot, from the stream or the bucket, brings it back
 
     def snapshot_frame(self) -> bytes:
-        envelope = Envelope(venue=self.venue, symbol=self.symbol, seq=self.seq)
+        envelope = Envelope(
+            venue=self.venue, symbol=self.symbol, seq=self.seq, ts_gw_send_ns=time.time_ns()
+        )
         envelope.snapshot.CopyFrom(to_snapshot(self.book, self.price_scale, self.size_scale))
         return envelope.SerializeToString()
 
@@ -103,7 +111,9 @@ class Mirror:
         resynced) since the last call."""
         delta_frame = None
         if self.pending and not self.resynced:
-            envelope = Envelope(venue=self.venue, symbol=self.symbol, seq=self.seq)
+            envelope = Envelope(
+                venue=self.venue, symbol=self.symbol, seq=self.seq, ts_gw_send_ns=time.time_ns()
+            )
             envelope.delta.CopyFrom(
                 Delta(
                     updates=[
@@ -118,6 +128,10 @@ class Mirror:
             for frame, kind in ((self.analytics, "analytics"), (self.strategy, "strategy"))
             if frame is not None
         ]
+        if self.first_pending_ns and (delta_frame or self.trades):
+            # How long conflation held the oldest change: at most one tick, by design.
+            LATENCY.record_ns("gateway_hold", self.first_pending_ns, time.time_ns())
+        self.first_pending_ns = 0
         result = (delta_frame, self.trades, latest, self.resynced)
         self.pending, self.trades, self.resynced = {}, [], False
         self.analytics = self.strategy = None

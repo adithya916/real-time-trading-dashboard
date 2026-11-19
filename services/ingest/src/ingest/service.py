@@ -23,7 +23,9 @@ from typing import Any, Protocol
 from ingest.adapters.base import FeedAdapter, supervise
 from ingest.adapters.registry import load
 from ingest.recording import ReplayConnector
-from mdcommon.schema import Envelope
+from mdcommon.latency import LATENCY, serve_metrics
+from mdcommon.metrics import ENVELOPES, RESETS
+from mdcommon.schema import Envelope, ResetReason
 
 log = logging.getLogger(__name__)
 
@@ -63,8 +65,15 @@ async def publish(
     snapshot_every_s: float = 1.0,
     max_restarts: int | None = None,
     clock: Callable[[], int] = time.time_ns,
+    measure: bool = True,
+    service: str = "ingest",
 ) -> int:
-    """Publish everything the adapter produces until it stops. Returns how many envelopes."""
+    """Publish everything the adapter produces until it stops. Returns how many envelopes.
+
+    With measure, each envelope's hops go into the latency histograms: exch_to_recv (venue
+    time to ours, so it includes any offset between the clocks) and recv_to_bus (in-process).
+    A replay turns it off: its receive times are the recording's, not now.
+    """
     published = 0
     last_refresh = time.monotonic()
     async with aclosing(supervise(adapter, max_restarts=max_restarts)) as envelopes:
@@ -72,6 +81,14 @@ async def publish(
             envelope.ts_bus_ns = clock()
             await bus.publish(envelope)
             published += 1
+            kind = envelope.WhichOneof("payload") or "none"
+            ENVELOPES.labels(service, envelope.venue, kind).inc()
+            if kind == "reset":
+                reason = ResetReason.Name(envelope.reset.reason).removeprefix("RESET_REASON_")
+                RESETS.labels(service, envelope.venue, reason.lower()).inc()
+            if measure:
+                LATENCY.record_ns("exch_to_recv", envelope.ts_exch_ns, envelope.ts_recv_ns)
+                LATENCY.record_ns("recv_to_bus", envelope.ts_recv_ns, envelope.ts_bus_ns)
             if envelope.HasField("snapshot"):
                 await bus.put_snapshot(envelope)
             if time.monotonic() - last_refresh >= snapshot_every_s:
@@ -90,10 +107,16 @@ def parse_feed(spec: str) -> tuple[str, list[str]]:
 
 
 async def run(
-    feeds: list[tuple[str, list[str]]], bus_url: str, replay: Path | None, speed: float | None
+    feeds: list[tuple[str, list[str]]],
+    bus_url: str,
+    replay: Path | None,
+    speed: float | None,
+    metrics_port: int = 0,
 ) -> None:
     from mdcommon.bus import BusPublisher
 
+    if metrics_port:
+        serve_metrics(metrics_port)
     bus = await BusPublisher.connect(bus_url)
     tasks = []
     for venue, symbols in feeds:
@@ -105,7 +128,7 @@ async def run(
             if venue == "binance":
                 kwargs["fetch"] = replayer.fetch
         adapter = load(venue)(symbols, **kwargs)
-        tasks.append(publish(adapter, bus, max_restarts=0 if replay else None))
+        tasks.append(publish(adapter, bus, max_restarts=0 if replay else None, measure=not replay))
     try:
         counts = await asyncio.gather(*tasks)
         log.info("published %d envelopes", sum(counts))
@@ -119,11 +142,12 @@ def main() -> None:
     parser.add_argument("--bus", default="nats://localhost:4222")
     parser.add_argument("--replay", type=Path, help="play a recording instead of connecting live")
     parser.add_argument("--speed", type=float, help="replay speed; omit for as fast as possible")
+    parser.add_argument("--metrics-port", type=int, default=9101, help="0 turns /metrics off")
     args = parser.parse_args()
     if args.replay and len(args.feeds) != 1:
         parser.error("--replay plays one recording, so give exactly one feed")
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
-    asyncio.run(run(args.feeds, args.bus, args.replay, args.speed))
+    asyncio.run(run(args.feeds, args.bus, args.replay, args.speed, args.metrics_port))
 
 
 if __name__ == "__main__":

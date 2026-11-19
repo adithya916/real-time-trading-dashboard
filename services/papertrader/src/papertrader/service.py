@@ -18,6 +18,8 @@ import logging
 import time
 from typing import Any
 
+from mdcommon.latency import LATENCY, serve_metrics
+from mdcommon.metrics import PAPER_FILLS
 from mdcommon.schema import Envelope
 from papertrader.trader import PaperTrader
 
@@ -27,9 +29,11 @@ DECIDE_EVERY_S = 0.25
 STATE_EVERY_S = 0.5
 
 
-async def run(bus_url: str, symbol: str, account: str) -> None:
+async def run(bus_url: str, symbol: str, account: str, metrics_port: int = 0) -> None:
     import nats
 
+    if metrics_port:
+        serve_metrics(metrics_port)
     from mdcommon.bus import SNAPSHOT_BUCKET, ensure_stream, snapshot_key, subject_for
 
     nc = await nats.connect(bus_url, name="papertrader", max_reconnect_attempts=-1)
@@ -51,7 +55,9 @@ async def run(bus_url: str, symbol: str, account: str) -> None:
             await resync()
 
     async def on_fill(msg: Any) -> None:
-        trader.on_fill(json.loads(msg.data))
+        body = json.loads(msg.data)
+        trader.on_fill(body)
+        PAPER_FILLS.labels(body["side"]).inc()
 
     await nc.subscribe(f"md.{VENUE}.{symbol}.*", cb=on_market)
     await nc.subscribe(f"fills.{VENUE}.{symbol}.{account}", cb=on_fill)
@@ -60,9 +66,11 @@ async def run(bus_url: str, symbol: str, account: str) -> None:
     async def send(requests: list[dict[str, Any]]) -> None:
         for request in requests:
             try:
+                sent = time.perf_counter_ns()
                 msg = await nc.request(
                     f"orders.{VENUE}.{symbol}", json.dumps(request).encode(), timeout=2
                 )
+                LATENCY.record_us("order_round_trip", (time.perf_counter_ns() - sent) // 1000)
                 trader.on_reply(request, json.loads(msg.data))
             except Exception as exc:  # the venue is away; the order state heals next round
                 log.warning("order request failed (%r)", exc)
@@ -91,9 +99,10 @@ def main() -> None:
     parser.add_argument("symbol")
     parser.add_argument("--bus", default="nats://localhost:4222")
     parser.add_argument("--account", default="mm")
+    parser.add_argument("--metrics-port", type=int, default=9104, help="0 turns /metrics off")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
-    asyncio.run(run(args.bus, args.symbol, args.account))
+    asyncio.run(run(args.bus, args.symbol, args.account, args.metrics_port))
 
 
 if __name__ == "__main__":

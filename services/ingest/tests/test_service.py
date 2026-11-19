@@ -124,3 +124,19 @@ def test_feed_specs_parse_venue_and_symbols() -> None:
     assert parse_feed("kraken:BTC-USD,ETH-USD") == ("kraken", ["BTC-USD", "ETH-USD"])
     with pytest.raises(argparse.ArgumentTypeError):
         parse_feed("kraken")
+
+
+def test_publishing_records_hops_and_counts_resets() -> None:
+    from mdcommon.latency import LATENCY
+    from mdcommon.metrics import ENVELOPES, RESETS
+
+    before = ENVELOPES.labels("ingest", "kraken", "delta")._value.get()
+    resets = RESETS.labels("ingest", "kraken", "reconnect")._value.get()
+    LATENCY.hops.pop("recv_to_bus", None)
+    adapter = KrakenAdapter(
+        ["BTC-USD"], connect=ReplayConnector(FIXTURES / "kraken_btcusd.jsonl.gz")
+    )
+    asyncio.run(publish(adapter, FakeBus(), max_restarts=0))
+    assert ENVELOPES.labels("ingest", "kraken", "delta")._value.get() > before
+    assert RESETS.labels("ingest", "kraken", "reconnect")._value.get() == resets + 1
+    assert LATENCY.summary()["recv_to_bus"]["count"] > 1000
