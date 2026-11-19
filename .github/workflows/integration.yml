@@ -33,6 +33,7 @@ jobs:
               - 'scripts/replay_smoke.py'
               - 'scripts/strategy_smoke.py'
               - 'scripts/metrics_smoke.py'
+              - 'scripts/observability_smoke.py'
               - 'proto/**'
               - '.github/workflows/integration.yml'
 
@@ -88,6 +89,10 @@ jobs:
         run: uv run --project services/gateway --frozen --python 3.12 python scripts/strategy_smoke.py ws://localhost:8080/ws/sim/BTC-SIM
       - name: Per-hop latency from the gateway's /metrics
         run: python3 scripts/metrics_smoke.py http://localhost:8080/metrics bus_to_gateway gateway_hold
+      - name: Alert rules pass promtool
+        run: docker run --rm --entrypoint promtool -v "$PWD/deploy/prometheus:/p:ro" prom/prometheus:v2.55.1 check rules /p/alerts.yml
+      - name: Prometheus scrapes every service and Grafana serves the dashboard
+        run: python3 scripts/observability_smoke.py http://localhost:9090 http://localhost:3000
       - name: Build the ingest image
         run: docker compose --profile feeds build ingest
       - name: Logs on failure
