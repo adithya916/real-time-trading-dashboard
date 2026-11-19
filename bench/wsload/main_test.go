@@ -86,3 +86,23 @@ func TestParseSteps(t *testing.T) {
 		}
 	}
 }
+
+func TestMessagesSplitIntoEnvelopes(t *testing.T) {
+	now := int64(10_000_000)
+	var msg []byte
+	for _, f := range [][]byte{
+		envelope(1, 0, now-1_000_000, fieldDelta),
+		envelope(2, now-2_000_000, 0, fieldTrade),
+		envelope(3, 0, 0, fieldAnalytics),
+	} {
+		msg = protowire.AppendBytes(msg, f)
+	}
+	s := newStats()
+	s.message(msg, now)
+	if s.messages.Load() != 1 || s.frames.Load() != 3 || s.staleness.TotalCount() != 1 || s.busToView.TotalCount() != 1 {
+		t.Fatalf("messages %d frames %d", s.messages.Load(), s.frames.Load())
+	}
+	if _, err := splitBatch(msg[:len(msg)-1]); err == nil {
+		t.Fatal("a cut message should not split")
+	}
+}

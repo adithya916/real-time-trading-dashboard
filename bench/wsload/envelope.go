@@ -84,3 +84,18 @@ func parseStamps(b []byte) (Stamps, error) {
 	}
 	return s, nil
 }
+
+// splitBatch splits one gateway message (one tick) into its envelopes: each is prefixed with
+// its varint byte length, Protobuf's size-delimited framing.
+func splitBatch(b []byte) ([][]byte, error) {
+	var frames [][]byte
+	for len(b) > 0 {
+		frame, n := protowire.ConsumeBytes(b)
+		if n < 0 {
+			return frames, errMalformed
+		}
+		frames = append(frames, frame)
+		b = b[n:]
+	}
+	return frames, nil
+}

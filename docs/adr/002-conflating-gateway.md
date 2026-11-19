@@ -36,3 +36,18 @@ rather than per recipient.
 - Trades are not capped, so a very busy symbol can still overflow a slow viewer's queue; that
   viewer then resyncs from a snapshot and misses the trades it couldn't take.
 - Gateway cost per tick is one encode per changed book plus one queue append per viewer.
+
+## Update: one WebSocket message per tick
+
+The first load test (`bench/wsload`, GitHub runner with the whole stack on 4 CPUs) found the
+gateway saturating near 500 viewers: round-trip p99 above 1 s, and connections timing out at
+1,000. The book was capped at 20 frames a second, but every trade, metrics update and strategy
+state was still its own WebSocket send, about 50 a second per viewer on the simulated feed, and
+each send costs the event loop a queue hand-off and a socket write.
+
+So each tick's frames for a symbol now travel in **one message**: a size-delimited stream of
+envelopes (a varint length before each, Protobuf's standard framing), built once per symbol
+per tick. Every in-sync viewer gets the same bytes; a viewer that needs the whole book gets the
+snapshot version. Sends per viewer drop to at most 20 a second, whatever the trade rate, and
+the per-viewer work per tick is one queue append. Viewer queues now count messages (100, about
+5 s), so the slow-viewer rules are unchanged in time.

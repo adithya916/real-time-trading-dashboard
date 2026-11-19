@@ -1,15 +1,17 @@
 import json
 from decimal import Decimal
 from pathlib import Path
+from typing import Any
 
 from fastapi.testclient import TestClient
 from gateway.app import create_app
-from gateway.hub import CLOSE_FRAME, QUEUE_FRAMES, SLOW_LIMIT_S, Hub, Viewer
+from gateway.hub import CLOSE_FRAME, QUEUE_MESSAGES, SLOW_LIMIT_S, Hub, Viewer
 from gateway.mirror import Mirror
 
 from ingest.adapters.kraken import KrakenAdapter
 from ingest.recording import load_frames
 from mdcommon.schema import BookReset, Delta, Envelope, Level, LevelUpdate, Side, Snapshot, Trade
+from mdcommon.wire import decode_batch, split_batch
 
 FIXTURE = Path(__file__).parents[2] / "ingest" / "tests" / "fixtures" / "kraken_btcusd.jsonl.gz"
 KEY = ("kraken", "BTC-USD")
@@ -62,12 +64,17 @@ def apply_frames(book: dict[int, dict[int, int]], frames: list[bytes]) -> None:
 
 
 def drain(viewer: Viewer) -> list[bytes]:
+    """Every envelope queued for the viewer, unpacked from the per-tick messages."""
     frames = []
     while not viewer.queue.empty():
-        frame = viewer.queue.get_nowait()
-        assert isinstance(frame, bytes)  # no pings in these tests
-        frames.append(frame)
+        message = viewer.queue.get_nowait()
+        assert isinstance(message, bytes)  # no pings in these tests
+        frames += split_batch(message)
     return frames
+
+
+def receive(ws: Any) -> list[Envelope]:
+    return decode_batch(ws.receive_bytes())
 
 
 # --- mirror ---------------------------------------------------------------------------------
@@ -166,15 +173,14 @@ def test_a_viewer_that_never_reads_gets_snapshots_then_is_disconnected() -> None
     hub.on_envelope(snapshot(1))
     seq, now = 1, 0.0
     while not slow.closed:
-        # Half a queue per tick: a viewer that reads each tick keeps up, one that never reads
-        # overflows on the second tick.
-        for _ in range(QUEUE_FRAMES // 2):
-            seq += 1
-            hub.on_envelope(env(seq, trade=Trade(trade_id=str(seq))))
+        # A trade every tick: a viewer that reads each tick keeps up, one that never reads
+        # fills its queue after QUEUE_MESSAGES ticks.
+        seq += 1
+        hub.on_envelope(env(seq, trade=Trade(trade_id=str(seq))))
         hub.tick(now)
         drain(fast)
         now += 0.05
-        assert now < SLOW_LIMIT_S + 1, "the slow viewer was never disconnected"
+        assert now < QUEUE_MESSAGES * 0.05 + SLOW_LIMIT_S + 1, "the slow viewer was never closed"
 
     assert slow.queue.get_nowait() == CLOSE_FRAME
     assert hub.disconnected_slow == 1
@@ -185,18 +191,21 @@ def test_a_slow_viewer_that_catches_up_gets_a_fresh_snapshot() -> None:
     hub = Hub()
     viewer = hub.add_viewer(KEY)
     hub.on_envelope(snapshot(1))
-    for seq in range(2, QUEUE_FRAMES + 3):
+    seq = 1
+    for tick in range(QUEUE_MESSAGES + 1):  # it never reads: the queue overflows
+        seq += 1
         hub.on_envelope(env(seq, trade=Trade(trade_id=str(seq))))
-    hub.tick(0.0)  # overflow: backlog dropped
-    assert viewer.needs_snapshot and viewer.behind_since == 0.0
+        hub.tick(tick * 0.05)
+    overflowed_at = QUEUE_MESSAGES * 0.05
+    assert viewer.needs_snapshot and viewer.behind_since == overflowed_at
 
-    hub.on_envelope(delta(QUEUE_FRAMES + 3, 99, 4))
-    hub.tick(0.05)
+    hub.on_envelope(delta(seq + 1, 99, 4))
+    hub.tick(overflowed_at + 0.05)
     frames = [Envelope.FromString(f) for f in drain(viewer)]  # it reads this time
     assert frames[0].HasField("snapshot") and frames[0].snapshot.bids[0].price_ticks == 100
     assert not viewer.needs_snapshot
 
-    hub.tick(0.10)  # it read everything it was given, so it counts as caught up
+    hub.tick(overflowed_at + 0.10)  # it read everything it was given: caught up
     assert viewer.behind_since is None
 
 
@@ -210,11 +219,11 @@ def test_the_websocket_sends_a_snapshot_then_conflated_deltas() -> None:
     with TestClient(app) as client:
         assert client.get("/symbols").json() == [{"venue": "kraken", "symbol": "BTC-USD"}]
         with client.websocket_connect("/ws/kraken/BTC-USD") as ws:
-            first = Envelope.FromString(ws.receive_bytes())
+            (first,) = receive(ws)
             assert first.HasField("snapshot") and first.seq == 1
             hub.on_envelope(delta(2, 99, 3))
             hub.on_envelope(delta(3, 99, 4))  # same level twice before the tick
-            second = Envelope.FromString(ws.receive_bytes())
+            (second,) = receive(ws)
             assert second.HasField("delta") and second.seq == 3
             assert [(u.price_ticks, u.size_lots) for u in second.delta.updates] == [(99, 4)]
 
@@ -226,6 +235,6 @@ def test_a_text_ping_comes_back_after_the_queued_frames() -> None:
         TestClient(create_app(hub)) as client,
         client.websocket_connect("/ws/kraken/BTC-USD") as ws,
     ):
-        assert Envelope.FromString(ws.receive_bytes()).HasField("snapshot")
+        assert receive(ws)[0].HasField("snapshot")
         ws.send_text("ping:12345.5")
         assert ws.receive_text() == "ping:12345.5"

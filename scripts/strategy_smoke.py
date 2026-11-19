@@ -11,7 +11,7 @@ import time
 
 import websockets
 
-from mdcommon.schema import Envelope
+from mdcommon.wire import decode_batch
 
 
 async def main(url: str, timeout_s: float = 90) -> None:
@@ -22,11 +22,11 @@ async def main(url: str, timeout_s: float = 90) -> None:
             frame = await asyncio.wait_for(ws.recv(), timeout_s)
             if isinstance(frame, str):
                 continue
-            envelope = Envelope.FromString(frame)
-            if envelope.HasField("strategy"):
-                seen = envelope.strategy
-                if seen.fills > 0:
-                    break
+            for envelope in decode_batch(frame):
+                if envelope.HasField("strategy"):
+                    seen = envelope.strategy
+            if seen is not None and seen.fills > 0:
+                break
     if seen is None:
         raise SystemExit("no strategy state reached the viewer")
     if seen.fills == 0:
