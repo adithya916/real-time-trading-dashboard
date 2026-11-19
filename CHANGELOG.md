@@ -98,3 +98,10 @@
 - Prometheus and Grafana in the default Compose stack (`deploy/compose/observability.yaml`). Prometheus scrapes every service every 5 s. Grafana is provisioned from the repo (data source, folder, dashboards), opens read-only for anyone without signing in, and starts on the **Market data pipeline** dashboard: p99 and p50 latency per hop, the bus-to-gateway tail, envelopes per second by service and kind, frames to viewers, viewers per feed, resyncs, slow disconnects, book resets by reason, the paper trader's fills and order round trip, and trades stored.
 - Alert rules: `ChecksumFailures` (a venue's books keep failing their checksum for 5 minutes), `GatewayLagging` (p99 bus to gateway above 100 ms for 5 minutes) and `ServiceDown`.
 - The integration job checks the rules with promtool, waits for every target to be up, confirms the rules loaded, and runs every dashboard query against Prometheus, so a typo fails CI instead of drawing an empty chart.
+## Load generator
+
+- `bench/wsload` (Go): an open-model WebSocket load test. Viewers connect at a constant arrival rate up to each step (for example 1,000 → 10,000), and each step is then held and measured.
+  - Every viewer reads every frame. It records staleness (now minus the gateway's `ts_gw_send_ns`) for book frames and bus-to-viewer time for trades, reading those fields straight from the Protobuf bytes.
+  - It pings every second, recording the round trip with coordinated-omission correction.
+  - Results go to a CSV and a markdown table: connected, errors, closed by the gateway, frames and KiB per viewer per second, and p50/p99/p99.9/max of each.
+- `bench-load` workflow: vets and tests the Go code (with the race detector), starts the Compose stack and steps viewers up on the simulated BTC-SIM feed. Pull requests run a short ramp; a manual run takes custom steps up to 10,000. The table, the gateway's latency under load and container CPU and memory go on the run summary.
