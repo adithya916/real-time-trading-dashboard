@@ -8,12 +8,12 @@ import sys
 
 import websockets
 
-from mdcommon.schema import Envelope
+from mdcommon.wire import decode_batch
 
 
 async def main(url: str) -> None:
     async with websockets.connect(url) as ws:
-        first = Envelope.FromString(await asyncio.wait_for(ws.recv(), 20))
+        first = decode_batch(await asyncio.wait_for(ws.recv(), 20))[0]
     assert first.HasField("snapshot"), first.WhichOneof("payload")
     # Kraken publishes 10 levels a side, the simulator 25.
     assert len(first.snapshot.bids) >= 10 and len(first.snapshot.asks) >= 10, first.snapshot

@@ -8,6 +8,7 @@ from gateway.demo import replay_forever
 from gateway.hub import Hub
 
 from mdcommon.schema import Envelope
+from mdcommon.wire import decode_batch
 
 FIXTURE = Path(__file__).parents[2] / "ingest" / "tests" / "fixtures" / "kraken_btcusd.jsonl.gz"
 KEY = ("kraken", "BTC-USD")
@@ -90,6 +91,6 @@ def test_a_viewer_gets_the_replayed_book_over_websocket() -> None:
     with TestClient(create_app(hub)) as client:
         assert client.get("/symbols").json() == [{"venue": "kraken", "symbol": "BTC-USD"}]
         with client.websocket_connect("/ws/kraken/BTC-USD") as ws:
-            first = Envelope.FromString(ws.receive_bytes())
+            first = decode_batch(ws.receive_bytes())[0]
     assert first.HasField("snapshot")
     assert first.seq == hub.mirrors[KEY].seq

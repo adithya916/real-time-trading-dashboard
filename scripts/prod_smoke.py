@@ -17,6 +17,7 @@ import urllib.request
 import websockets
 
 from mdcommon.schema import Envelope
+from mdcommon.wire import decode_batch
 
 INSECURE = ssl.create_default_context()
 INSECURE.check_hostname = False
@@ -46,7 +47,7 @@ def wait_for(url: str, timeout_s: float = 120) -> None:
 
 async def first_frame(url: str) -> Envelope:
     async with websockets.connect(url, ssl=INSECURE) as ws:
-        return Envelope.FromString(await asyncio.wait_for(ws.recv(), 30))
+        return decode_batch(await asyncio.wait_for(ws.recv(), 30))[0]
 
 
 def main(base: str) -> None:

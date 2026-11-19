@@ -1,6 +1,7 @@
-// Owns the gateway WebSocket. Decodes every binary frame and applies it here, off the main
+// Owns the gateway WebSocket. Decodes every envelope in each message and applies it here, off the main
 // thread; the page asks for one MarketView per animation frame instead of handling messages.
 import { MarketState } from './book';
+import { splitBatch } from './wire';
 
 export type ToWorker = { type: 'connect'; url: string } | { type: 'frame' };
 export type FromWorker = { type: 'view'; view: ReturnType<MarketState['view']> };
@@ -35,7 +36,9 @@ function connect(url: string): void {
       }
       return;
     }
-    state.apply(new Uint8Array(event.data), Date.now());
+    // One message per gateway tick, holding that tick's envelopes in order.
+    const now = Date.now();
+    for (const frame of splitBatch(new Uint8Array(event.data))) state.apply(frame, now);
   };
   ws.onclose = () => {
     state.connected = false;

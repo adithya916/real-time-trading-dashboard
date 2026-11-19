@@ -115,3 +115,8 @@
 - `deploy/compose.prod.yaml` adds Caddy on 80/443 and unpublishes every other port, requires real passwords, and serves Grafana under `/grafana`. `deploy/oracle-setup.sh` prepares a fresh Ubuntu server (Docker, firewall, connection limits, random secrets) and starts it; `docs/DEPLOY.md` covers the Oracle Always Free ARM server and a free `sslip.io` name.
 - `deploy` workflow: on each push to `main`, SSH (host key pinned) runs `deploy/remote-deploy.sh` and checks the public health endpoint; without the `DEPLOY_*` secrets it reports "not configured" and passes. The server builds natively on ARM, so there is no cross-compiling.
 - Integration starts the production configuration behind Caddy with a local CA and checks that only 80 and 443 are published, that the dashboard, API, `wss://` stream and Grafana answer through it, and that `/metrics` is not exposed.
+
+## Gateway: one message per viewer per tick
+
+- The first load test saturated the gateway near 500 viewers: every trade, metrics update and strategy state was its own WebSocket send, about 50 a second per viewer. Each tick's frames now go in one binary message, a size-delimited stream of envelopes (`mdcommon.wire`, Protobuf's standard framing), built once per symbol and shared by every in-sync viewer. That is at most 20 sends a second per viewer. Viewer queues count messages (100, about 5 s).
+- The browser worker (`worker/wire.ts`), the Go load generator (now also reporting messages per viewer per second), the smoke scripts and the tests read the new framing. ADR 002 has the reasoning and numbers.

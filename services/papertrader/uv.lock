@@ -98,6 +98,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "hypothesis", specifier = "==6.122.3" },
     { name = "mypy", specifier = "==1.14.1" },
     { name = "pytest", specifier = "==8.3.4" },
     { name = "types-protobuf", specifier = "==5.29.1.20241207" },

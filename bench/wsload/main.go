@@ -6,7 +6,8 @@
 // whether or not earlier connections have finished, until each step's count is reached; the
 // step is then held. Every viewer
 //
-//   - reads every frame and, for frames the gateway built (snapshots and deltas), records
+//   - reads every message (one per gateway tick, several envelopes in it) and, for the
+//     envelopes the gateway built (snapshots and deltas), records
 //     staleness = now - ts_gw_send_ns: how old the book update is when the viewer has it;
 //   - records bus-to-viewer = now - ts_bus_ns for trades, which the gateway forwards as is;
 //   - pings every -ping interval and records the round trip with HdrHistogram's
@@ -44,6 +45,7 @@ type stats struct {
 	rtt       *hdrhistogram.Histogram // µs
 	staleness *hdrhistogram.Histogram // µs
 	busToView *hdrhistogram.Histogram // µs
+	messages  atomic.Int64
 	frames    atomic.Int64
 	bytes     atomic.Int64
 	errors    atomic.Int64
@@ -66,6 +68,7 @@ func (s *stats) reset() {
 	s.staleness.Reset()
 	s.busToView.Reset()
 	s.mu.Unlock()
+	s.messages.Store(0)
 	s.frames.Store(0)
 	s.bytes.Store(0)
 	s.errors.Store(0)
@@ -83,9 +86,22 @@ func clampMicros(ns int64) int64 {
 	return us
 }
 
+// message handles one binary WebSocket message: one gateway tick, several envelopes.
+func (s *stats) message(b []byte, now int64) {
+	s.messages.Add(1)
+	s.bytes.Add(int64(len(b)))
+	frames, err := splitBatch(b)
+	if err != nil {
+		s.errors.Add(1)
+		return
+	}
+	for _, f := range frames {
+		s.frame(f, now)
+	}
+}
+
 func (s *stats) frame(b []byte, now int64) {
 	s.frames.Add(1)
-	s.bytes.Add(int64(len(b)))
 	st, err := parseStamps(b)
 	if err != nil {
 		s.errors.Add(1)
@@ -152,13 +168,14 @@ func viewer(ctx context.Context, url string, ping time.Duration, s *stats, wg *s
 			}
 			continue
 		}
-		s.frame(data, now)
+		s.message(data, now)
 	}
 }
 
 type result struct {
 	Viewers, Connected                     int64
 	Errors, Closed                         int64
+	MessagesPerViewerPerS                  float64
 	FramesPerViewerPerS, KiBPerViewerPerS  float64
 	RTT, Staleness, BusToView              [4]float64 // p50, p99, p99.9, max in ms
 	RTTSamples, StaleSamples, TradeSamples int64
@@ -231,7 +248,8 @@ func main() {
 			Connected:           connected,
 			Errors:              s.errors.Load(),
 			Closed:              s.closed.Load(),
-			FramesPerViewerPerS: float64(s.frames.Load()) / per,
+			MessagesPerViewerPerS: float64(s.messages.Load()) / per,
+			FramesPerViewerPerS:   float64(s.frames.Load()) / per,
 			KiBPerViewerPerS:    float64(s.bytes.Load()) / 1024 / per,
 			RTT:                 percentiles(s.rtt),
 			Staleness:           percentiles(s.staleness),
@@ -256,12 +274,12 @@ func main() {
 }
 
 func printTable(results []result) {
-	fmt.Println("| Viewers | Connected | Errors | Closed | Frames/s per viewer | KiB/s per viewer | RTT p50 / p99 / p99.9 / max (ms) | Staleness p50 / p99 / p99.9 / max (ms) | Bus to viewer p50 / p99 (ms) |")
-	fmt.Println("| ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | --- |")
+	fmt.Println("| Viewers | Connected | Errors | Closed | Messages/s per viewer | Envelopes/s per viewer | KiB/s per viewer | RTT p50 / p99 / p99.9 / max (ms) | Staleness p50 / p99 / p99.9 / max (ms) | Bus to viewer p50 / p99 (ms) |")
+	fmt.Println("| ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | --- |")
 	q := func(v [4]float64) string { return fmt.Sprintf("%.1f / %.1f / %.1f / %.1f", v[0], v[1], v[2], v[3]) }
 	for _, r := range results {
-		fmt.Printf("| %d | %d | %d | %d | %.1f | %.2f | %s | %s | %.1f / %.1f |\n",
-			r.Viewers, r.Connected, r.Errors, r.Closed, r.FramesPerViewerPerS, r.KiBPerViewerPerS,
+		fmt.Printf("| %d | %d | %d | %d | %.1f | %.1f | %.2f | %s | %s | %.1f / %.1f |\n",
+			r.Viewers, r.Connected, r.Errors, r.Closed, r.MessagesPerViewerPerS, r.FramesPerViewerPerS, r.KiBPerViewerPerS,
 			q(r.RTT), q(r.Staleness), r.BusToView[0], r.BusToView[1])
 	}
 }
@@ -273,7 +291,7 @@ func writeCSV(path string, results []result) error {
 	}
 	defer f.Close()
 	w := csv.NewWriter(f)
-	header := []string{"viewers", "connected", "errors", "closed", "frames_per_viewer_s", "kib_per_viewer_s"}
+	header := []string{"viewers", "connected", "errors", "closed", "messages_per_viewer_s", "frames_per_viewer_s", "kib_per_viewer_s"}
 	for _, name := range []string{"rtt", "staleness", "bus_to_viewer"} {
 		header = append(header, name+"_p50_ms", name+"_p99_ms", name+"_p999_ms", name+"_max_ms")
 	}
@@ -286,7 +304,7 @@ func writeCSV(path string, results []result) error {
 		row := []string{
 			strconv.FormatInt(r.Viewers, 10), strconv.FormatInt(r.Connected, 10),
 			strconv.FormatInt(r.Errors, 10), strconv.FormatInt(r.Closed, 10),
-			f2(r.FramesPerViewerPerS), f2(r.KiBPerViewerPerS),
+			f2(r.MessagesPerViewerPerS), f2(r.FramesPerViewerPerS), f2(r.KiBPerViewerPerS),
 		}
 		for _, q := range [][4]float64{r.RTT, r.Staleness, r.BusToView} {
 			row = append(row, f2(q[0]), f2(q[1]), f2(q[2]), f2(q[3]))

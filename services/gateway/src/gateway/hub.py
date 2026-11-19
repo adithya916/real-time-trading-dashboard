@@ -4,8 +4,14 @@ Each tick a mirror's changes become one delta frame, encoded once and handed to 
 that symbol, plus every trade and the latest analytics and strategy state. A viewer that just connected, or whose
 book was replaced by a resync, gets a snapshot frame instead of the delta.
 
-Slow viewers: each has a bounded queue. If it is full, the backlog is dropped and the viewer is
-sent a fresh snapshot instead; a viewer still behind after SLOW_LIMIT_S is disconnected (1013).
+All of a viewer's frames for one tick travel in one WebSocket message (mdcommon.wire), and the
+message is built once per symbol: every in-sync viewer gets the same bytes, and a viewer that
+needs the whole book gets the snapshot version. One send per viewer per tick, whatever the
+number of trades, is what lets one process serve many viewers.
+
+Slow viewers: each has a bounded queue of messages (QUEUE_MESSAGES ticks, about 5 s). If it is
+full, the backlog is dropped and the viewer gets a fresh snapshot instead; a viewer still
+behind SLOW_LIMIT_S after that is disconnected (1013).
 """
 
 from __future__ import annotations
@@ -17,9 +23,11 @@ from dataclasses import dataclass, field
 from gateway.mirror import Mirror
 from mdcommon.metrics import FRAMES, SLOW_DISCONNECTS, VIEWERS
 from mdcommon.schema import Envelope
+from mdcommon.wire import delimit
 
 Key = tuple[str, str]
-QUEUE_FRAMES = 256
+Message = tuple[bytes, list[str]]  # one tick's frames for a viewer, and their kinds
+QUEUE_MESSAGES = 100  # 5 s of 50 ms ticks
 SLOW_LIMIT_S = 5.0
 CLOSE_FRAME = b""  # sentinel: the sender closes the socket with 1013
 
@@ -27,8 +35,8 @@ CLOSE_FRAME = b""  # sentinel: the sender closes the socket with 1013
 @dataclass(eq=False)
 class Viewer:
     key: Key
-    # Binary Envelope frames, plus text replies to the viewer's latency pings.
-    queue: asyncio.Queue[bytes | str] = field(default_factory=lambda: asyncio.Queue(QUEUE_FRAMES))
+    # One binary message per tick (size-delimited envelopes), plus text replies to pings.
+    queue: asyncio.Queue[bytes | str] = field(default_factory=lambda: asyncio.Queue(QUEUE_MESSAGES))
     needs_snapshot: bool = True
     behind_since: float | None = None
     closed: bool = False
@@ -36,13 +44,14 @@ class Viewer:
     # Queue depth right after the last tick's frames were queued.
     queued_after_last_tick: int = 0
 
-    def offer(self, frame: bytes, kind: str) -> bool:
+    def offer(self, message: bytes, kinds: list[str]) -> bool:
         try:
-            self.queue.put_nowait(frame)
+            self.queue.put_nowait(message)
         except asyncio.QueueFull:
             return False
-        self.sent[kind] += 1
-        FRAMES.labels(kind).inc()
+        for kind in kinds:
+            self.sent[kind] += 1
+            FRAMES.labels(kind).inc()
         return True
 
     def drop_backlog(self) -> None:
@@ -84,26 +93,22 @@ class Hub:
             viewers = self.viewers.get(key, set())
             if not viewers or not mirror.synced:
                 continue
-            snapshot = (
-                mirror.snapshot_frame()
-                if resynced or any(v.needs_snapshot for v in viewers)
-                else None
-            )
+            # The rest of the tick, shared by both versions of the message.
+            tail = [(t, "trade") for t in trades] + latest
+            tail_bytes = b"".join(delimit(f) for f, _ in tail)
+            tail_kinds = [k for _, k in tail]
+            update: Message | None = None
+            if delta is not None and not resynced:
+                update = (delimit(delta) + tail_bytes, ["delta", *tail_kinds])
+            elif tail:
+                update = (tail_bytes, tail_kinds)
+            whole: Message | None = None
+            if resynced or any(v.needs_snapshot for v in viewers):
+                whole = (delimit(mirror.snapshot_frame()) + tail_bytes, ["snapshot", *tail_kinds])
             for viewer in list(viewers):
-                self._send(
-                    viewer, now, snapshot, None if resynced else delta, trades, latest, resynced
-                )
+                self._send(viewer, now, whole if viewer.needs_snapshot or resynced else update)
 
-    def _send(
-        self,
-        viewer: Viewer,
-        now: float,
-        snapshot: bytes | None,
-        delta: bytes | None,
-        trades: list[bytes],
-        latest: list[tuple[bytes, str]],
-        resynced: bool,
-    ) -> None:
+    def _send(self, viewer: Viewer, now: float, message: Message | None) -> None:
         if viewer.closed:
             return
         # Caught up only once it has read everything it was given last tick. Dropping a backlog
@@ -114,17 +119,13 @@ class Hub:
             and viewer.queued_after_last_tick
         ):
             viewer.behind_since = None
-        frames: list[tuple[bytes, str]] = []
-        if viewer.needs_snapshot or resynced:
-            assert snapshot is not None
-            frames.append((snapshot, "snapshot"))
-        elif delta is not None:
-            frames.append((delta, "delta"))
-        frames += [(t, "trade") for t in trades]
-        frames += latest
-
-        if all(viewer.offer(frame, kind) for frame, kind in frames):
-            viewer.needs_snapshot = False
+        if message is None:
+            viewer.queued_after_last_tick = viewer.queue.qsize()
+            return  # nothing happened this tick
+        data, kinds = message
+        if viewer.offer(data, kinds):
+            if kinds and kinds[0] == "snapshot":
+                viewer.needs_snapshot = False
             viewer.queued_after_last_tick = viewer.queue.qsize()
             return
 
