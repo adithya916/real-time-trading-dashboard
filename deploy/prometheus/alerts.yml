@@ -1,0 +1,28 @@
+groups:
+  - name: market-data
+    rules:
+      # A book that fails its venue checksum is rebuilt from a fresh snapshot each time; one
+      # failing for five minutes straight means the adapter, not the network, is wrong.
+      - alert: ChecksumFailures
+        expr: sum by (venue) (increase(md_book_resets_total{reason="checksum_mismatch"}[5m])) > 0
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "{{ $labels.venue }} books keep failing their checksum"
+          description: "{{ $value }} checksum resets in the last 5 minutes."
+      - alert: GatewayLagging
+        expr: md_latency_ms{hop="bus_to_gateway", quantile="0.99"} > 100
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "p99 bus to gateway above 100 ms"
+          description: "p99 is {{ $value }} ms."
+      - alert: ServiceDown
+        expr: up == 0
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: "{{ $labels.job }} is not answering /metrics"

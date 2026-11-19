@@ -77,7 +77,9 @@ uv run --project services/ingest python -m ingest.service --bus nats://localhost
   --replay services/ingest/tests/fixtures/kraken_btcusd.jsonl.gz kraken:BTC-USD
 ```
 
-If a port is taken, set `GATEWAY_PORT`, `NATS_PORT`, `NATS_MONITOR_PORT` or `TIMESCALE_PORT`. The database password defaults to a local-only value; set `TIMESCALE_PASSWORD` anywhere else.
+Prometheus (port 9090) scrapes every service, and Grafana (port 3000, read-only without signing in) opens on the **Market data pipeline** dashboard: latency per hop, throughput, viewers, resyncs and checksum failures, from `deploy/grafana/dashboards/`. Alert rules are in `deploy/prometheus/alerts.yml`.
+
+If a port is taken, set `GATEWAY_PORT`, `NATS_PORT`, `NATS_MONITOR_PORT`, `TIMESCALE_PORT`, `PROMETHEUS_PORT` or `GRAFANA_PORT`. The database password defaults to a local-only value; set `TIMESCALE_PASSWORD` anywhere else.
 
 ### Record and replay
 

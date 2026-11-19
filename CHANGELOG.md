@@ -92,3 +92,9 @@
 - Hops: `exch_to_recv` (venue time to ours, so it includes the clocks' offset) and `recv_to_bus` in ingest and the simulator, `bus_to_analytics`, `bus_to_gateway`, `gateway_hold` (how long conflation held the oldest change), and `order_round_trip` for the paper trader. Gateway-built frames now carry `ts_gw_send_ns`. The browser still reports only its WebSocket round trip, since its clock isn't ours.
 - `mdcommon.metrics` names the shared counters: envelopes, book resets by reason, viewers, frames, resyncs, slow disconnects, trades stored and paper fills. The gateway serves `/metrics`; ingest, analytics, the simulator and the paper trader serve it on ports 9101–9104.
 - The integration job prints the gateway's latency table on the run's summary page.
+
+## Dashboards and alerts
+
+- Prometheus and Grafana in the default Compose stack (`deploy/compose/observability.yaml`). Prometheus scrapes every service every 5 s. Grafana is provisioned from the repo (data source, folder, dashboards), opens read-only for anyone without signing in, and starts on the **Market data pipeline** dashboard: p99 and p50 latency per hop, the bus-to-gateway tail, envelopes per second by service and kind, frames to viewers, viewers per feed, resyncs, slow disconnects, book resets by reason, the paper trader's fills and order round trip, and trades stored.
+- Alert rules: `ChecksumFailures` (a venue's books keep failing their checksum for 5 minutes), `GatewayLagging` (p99 bus to gateway above 100 ms for 5 minutes) and `ServiceDown`.
+- The integration job checks the rules with promtool, waits for every target to be up, confirms the rules loaded, and runs every dashboard query against Prometheus, so a typo fails CI instead of drawing an empty chart.

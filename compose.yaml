@@ -10,3 +10,4 @@ include:
   - deploy/compose/papertrader.yaml
   - deploy/compose/analytics.yaml
   - deploy/compose/gateway.yaml
+  - deploy/compose/observability.yaml
