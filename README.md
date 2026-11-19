@@ -92,6 +92,10 @@ uv run --project services/recorder python -m recorder.replay --root data --speed
 
 A replay publishes the recorded envelopes unchanged (same seq and venue timestamps) on the same subjects, so analytics, the candle history and the dashboard treat it like the live session. Golden files in `services/ingest/tests/golden/` pin a hash of each book every 1,000 level updates and at the end of each session. Replaying a recording through ingest, through Parquet, or through the bus in CI must reproduce them exactly.
 
+### On a server
+
+The production setup puts everything behind Caddy on one HTTPS host (dashboard, WebSocket, API and Grafana), with nothing else published. [`docs/DEPLOY.md`](docs/DEPLOY.md) walks through a free Oracle Cloud ARM server, a free `sslip.io` hostname and deploys on every push to `main`.
+
 ### Without Docker: demo mode
 
 The gateway can replay a recording into itself, with the analytics computed in the same process and no NATS:

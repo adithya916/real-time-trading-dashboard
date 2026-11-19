@@ -1,0 +1,30 @@
+# One host serves everything: the dashboard, the gateway's WebSocket and API, and Grafana.
+# Caddy gets and renews the TLS certificate for $DOMAIN by itself (Let's Encrypt), so $DOMAIN
+# must point at this server: a domain of yours, or <ip-with-dashes>.sslip.io for free.
+{$DOMAIN} {
+	encode zstd gzip
+
+	@gateway path /ws/* /symbols /history/* /health
+	handle @gateway {
+		reverse_proxy gateway:8080
+	}
+
+	# Read-only dashboards; Grafana is configured to live under /grafana.
+	handle /grafana* {
+		reverse_proxy grafana:3000
+	}
+
+	# The built dashboard. Unknown paths fall back to index.html.
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		-Server
+	}
+}

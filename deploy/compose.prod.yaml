@@ -1,0 +1,46 @@
+# Production: the whole stack behind Caddy on ports 80 and 443, nothing else published.
+#   docker compose -f compose.yaml -f deploy/compose.prod.yaml --profile feeds up -d --build
+# Needs DOMAIN, TIMESCALE_PASSWORD and GRAFANA_ADMIN_PASSWORD in .env (deploy/oracle-setup.sh
+# writes them). Paths here resolve from the repository root, like compose.yaml's.
+services:
+  caddy:
+    build:
+      context: .
+      dockerfile: deploy/caddy.Dockerfile
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+    restart: unless-stopped
+    depends_on:
+      gateway:
+        condition: service_healthy
+
+  # Reachable only through Caddy or the Compose network.
+  gateway:
+    ports: !reset []
+  nats:
+    ports: !reset []
+  timescale:
+    ports: !reset []
+    environment:
+      POSTGRES_PASSWORD: ${TIMESCALE_PASSWORD:?set TIMESCALE_PASSWORD in .env}
+  prometheus:
+    ports: !reset []
+  grafana:
+    ports: !reset []
+    environment:
+      GF_SERVER_ROOT_URL: https://${DOMAIN}/grafana/
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/grafana/api/health"]
+
+volumes:
+  caddy-data:
+  caddy-config:

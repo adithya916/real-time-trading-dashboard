@@ -1,0 +1,64 @@
+name: deploy
+
+# Ships main to the server: SSH in, run deploy/remote-deploy.sh (fetch, rebuild, restart), then
+# check the public health endpoint. Until the repository has the secrets below, it reports
+# "not configured" and succeeds, so forks and the time before the server exists stay green.
+#
+#   DEPLOY_HOST         server address
+#   DEPLOY_USER         SSH user (ubuntu on Oracle's images)
+#   DEPLOY_SSH_KEY      private key whose public half is in the server's authorized_keys
+#   DEPLOY_KNOWN_HOSTS  output of ssh-keyscan for the host (pins it; no trust on first use)
+#   DEPLOY_DOMAIN       the DOMAIN from the server's .env, for the health check
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    env:
+      HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DOMAIN: ${{ secrets.DEPLOY_DOMAIN }}
+    steps:
+      - name: Configured?
+        id: configured
+        run: |
+          if [ -z "$HOST" ]; then
+            echo "::notice::Deploy not configured: add the DEPLOY_* secrets (see deploy.yml)."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.configured.outputs.ok == 'true'
+      - name: SSH key and pinned host
+        if: steps.configured.outputs.ok == 'true'
+        run: |
+          install -m 700 -d ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          echo "${{ secrets.DEPLOY_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+      - name: Deploy ${{ github.sha }}
+        if: steps.configured.outputs.ok == 'true'
+        run: ssh -i ~/.ssh/id_deploy -o StrictHostKeyChecking=yes "$DEPLOY_USER@$HOST" 'bash -s' -- "$GITHUB_SHA" < deploy/remote-deploy.sh
+      - name: Public health check
+        if: steps.configured.outputs.ok == 'true'
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS "https://$DOMAIN/health" && curl -fsS "https://$DOMAIN/symbols" | grep -q venue; then
+              echo; echo "live: https://$DOMAIN"; exit 0
+            fi
+            sleep 5
+          done
+          exit 1
