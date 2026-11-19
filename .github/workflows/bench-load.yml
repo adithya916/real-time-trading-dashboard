@@ -38,14 +38,18 @@ jobs:
         with:
           go-version: "1.23.4"
           cache-dependency-path: bench/wsload/go.sum
-      - name: Resolve modules (writes go.sum when it isn't committed yet)
+      - name: go.mod and go.sum are tidy and verified
         run: |
-          if [ ! -f go.sum ]; then go mod tidy; fi
+          go mod tidy
           go mod verify
+          git diff --exit-code -- go.mod go.sum || { echo "::error::run go mod tidy and commit go.mod and go.sum (CI's versions are in the go-modules artifact)"; exit 1; }
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: go-sum
-          path: bench/wsload/go.sum
+          name: go-modules
+          path: |
+            bench/wsload/go.mod
+            bench/wsload/go.sum
       - name: Vet
         run: go vet ./...
       - name: Test
@@ -68,7 +72,6 @@ jobs:
       - name: Build the load generator
         working-directory: bench/wsload
         run: |
-          if [ ! -f go.sum ]; then go mod tidy; fi
           go build -o wsload .
       - name: Raise connection limits
         run: |
