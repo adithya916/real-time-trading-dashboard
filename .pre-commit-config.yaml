@@ -9,6 +9,8 @@ repos:
       - id: mixed-line-ending
         args: [--fix=lf]
       - id: check-yaml
+        # Compose's !reset tag isn't plain YAML; CI checks that file with docker compose config.
+        exclude: ^deploy/compose\.prod\.yaml$
       - id: check-merge-conflict
       - id: check-added-large-files
         args: [--maxkb=1024]

@@ -34,6 +34,8 @@ jobs:
               - 'scripts/strategy_smoke.py'
               - 'scripts/metrics_smoke.py'
               - 'scripts/observability_smoke.py'
+              - 'scripts/prod_smoke.py'
+              - 'web/**'
               - 'proto/**'
               - '.github/workflows/integration.yml'
 
@@ -102,9 +104,48 @@ jobs:
         if: always()
         run: docker compose down -v
 
+  # The production setup: everything behind Caddy on 443, nothing else published. DOMAIN=localhost
+  # makes Caddy sign with its own CA instead of asking Let's Encrypt.
+  production:
+    needs: changes
+    if: needs.changes.outputs.stack == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      DOMAIN: localhost
+      TIMESCALE_PASSWORD: ci-only
+      GRAFANA_ADMIN_PASSWORD: ci-only
+      PROD: -f compose.yaml -f deploy/compose.prod.yaml
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.13.7"
+      - name: Validate the production Compose files and Caddyfile
+        run: |
+          docker compose $PROD --profile feeds config --quiet
+          docker run --rm -e DOMAIN=example.test -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2.8.4-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+      - name: Start the production stack (without live feeds)
+        run: docker compose $PROD up -d --build --wait --wait-timeout 600
+      - name: Only 80 and 443 are published
+        run: |
+          published=$(docker ps --format '{{.Ports}}' | grep -o '0.0.0.0:[0-9]*' | sort -u | paste -sd ' ')
+          echo "published: $published"
+          [ "$published" = "0.0.0.0:443 0.0.0.0:80" ]
+      - name: Generate Protobuf code
+        run: bash scripts/gen_proto.sh
+      - name: Dashboard, API, WebSocket and Grafana through Caddy
+        run: uv run --project services/gateway --frozen --python 3.12 python scripts/prod_smoke.py https://localhost
+      - name: Logs on failure
+        if: failure()
+        run: docker compose $PROD logs --no-color --tail 100 caddy gateway grafana
+      - name: Stop
+        if: always()
+        run: docker compose $PROD down -v
+
   integration-ok:
     if: always()
-    needs: [changes, stack]
+    needs: [changes, stack, production]
     runs-on: ubuntu-latest
     steps:
       - name: All integration jobs passed or were skipped

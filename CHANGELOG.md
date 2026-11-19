@@ -109,3 +109,9 @@
 ## Fix: simulator book updates out of order
 
 - An external order (the paper trader's) changes the simulator's book the moment it arrives, which can be while the venue waits for its next agent action. Its book update sat in an outbox that was only emptied after that next action had been applied and published, so the two went out in the wrong order and the older one overwrote a level with a stale size. Viewers could then see a crossed book; the integration job caught one. The outbox is now emptied right after the wait, so updates go out in the order the engine applied them. A regression test places orders during the wait and checks the published book never crosses and ends equal to the engine's.
+## Deployment
+
+- One host for everything: Caddy (`deploy/Caddyfile`, image `deploy/caddy.Dockerfile` with the dashboard built in) serves the dashboard, proxies `/ws`, `/symbols`, `/history` and `/health` to the gateway and `/grafana` to Grafana, and gets its own TLS certificate. A production build of the dashboard talks to whichever host served it, so one build works on any domain.
+- `deploy/compose.prod.yaml` adds Caddy on 80/443 and unpublishes every other port, requires real passwords, and serves Grafana under `/grafana`. `deploy/oracle-setup.sh` prepares a fresh Ubuntu server (Docker, firewall, connection limits, random secrets) and starts it; `docs/DEPLOY.md` covers the Oracle Always Free ARM server and a free `sslip.io` name.
+- `deploy` workflow: on each push to `main`, SSH (host key pinned) runs `deploy/remote-deploy.sh` and checks the public health endpoint; without the `DEPLOY_*` secrets it reports "not configured" and passes. The server builds natively on ARM, so there is no cross-compiling.
+- Integration starts the production configuration behind Caddy with a local CA and checks that only 80 and 443 are published, that the dashboard, API, `wss://` stream and Grafana answer through it, and that `/metrics` is not exposed.
