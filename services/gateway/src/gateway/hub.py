@@ -15,6 +15,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 
 from gateway.mirror import Mirror
+from mdcommon.metrics import FRAMES, SLOW_DISCONNECTS, VIEWERS
 from mdcommon.schema import Envelope
 
 Key = tuple[str, str]
@@ -41,6 +42,7 @@ class Viewer:
         except asyncio.QueueFull:
             return False
         self.sent[kind] += 1
+        FRAMES.labels(kind).inc()
         return True
 
     def drop_backlog(self) -> None:
@@ -66,11 +68,15 @@ class Hub:
     def add_viewer(self, key: Key) -> Viewer:
         viewer = Viewer(key)
         self.viewers.setdefault(key, set()).add(viewer)
+        VIEWERS.labels(*key).inc()
         self.mirror(key)
         return viewer
 
     def remove_viewer(self, viewer: Viewer) -> None:
-        self.viewers.get(viewer.key, set()).discard(viewer)
+        viewers = self.viewers.get(viewer.key, set())
+        if viewer in viewers:
+            viewers.discard(viewer)
+            VIEWERS.labels(*viewer.key).dec()
 
     def tick(self, now: float) -> None:
         for key, mirror in self.mirrors.items():
@@ -132,3 +138,4 @@ class Hub:
             viewer.closed = True
             viewer.queue.put_nowait(CLOSE_FRAME)
             self.disconnected_slow += 1
+            SLOW_DISCONNECTS.inc()

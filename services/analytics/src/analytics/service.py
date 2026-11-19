@@ -21,6 +21,8 @@ from typing import Any
 
 from analytics.db import TradeWriter, trade_row
 from analytics.metrics import SymbolAnalytics
+from mdcommon.latency import LATENCY, serve_metrics
+from mdcommon.metrics import ENVELOPES, TRADES_STORED
 from mdcommon.schema import Analytics, Envelope
 
 log = logging.getLogger(__name__)
@@ -78,9 +80,11 @@ async def connect_db(db_url: str, writer: TradeWriter) -> None:
     writer.pool = pool
 
 
-async def run(bus_url: str, db_url: str | None = None) -> None:
+async def run(bus_url: str, db_url: str | None = None, metrics_port: int = 0) -> None:
     import nats
 
+    if metrics_port:
+        serve_metrics(metrics_port)
     from mdcommon.bus import ensure_stream, subject_for
 
     # Subscribe first and connect to the database alongside: core NATS doesn't replay, so
@@ -95,6 +99,8 @@ async def run(bus_url: str, db_url: str | None = None) -> None:
         envelope = Envelope.FromString(msg.data)
         if envelope.HasField("analytics") or envelope.HasField("strategy"):
             return
+        LATENCY.record_ns("bus_to_analytics", envelope.ts_bus_ns, time.time_ns())
+        ENVELOPES.labels("analytics", envelope.venue, envelope.WhichOneof("payload")).inc()
         symbol = state.on_envelope(envelope)
         if writer and envelope.HasField("trade") and symbol.synced:
             writer.add(trade_row(envelope, symbol.price_scale, symbol.size_scale))
@@ -110,7 +116,7 @@ async def run(bus_url: str, db_url: str | None = None) -> None:
                 published += 1
             if writer and writer.due():
                 try:
-                    await writer.flush()
+                    TRADES_STORED.inc(await writer.flush())
                 except Exception as exc:  # keep publishing metrics while the database is away
                     log.warning("analytics: trade write failed (%r)", exc)
     finally:
@@ -126,9 +132,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Publish market metrics computed from the bus.")
     parser.add_argument("--bus", default="nats://localhost:4222")
     parser.add_argument("--db", help="TimescaleDB URL; trades are stored for candle history")
+    parser.add_argument("--metrics-port", type=int, default=9102, help="0 turns /metrics off")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
-    asyncio.run(run(args.bus, args.db))
+    asyncio.run(run(args.bus, args.db, args.metrics_port))
 
 
 if __name__ == "__main__":

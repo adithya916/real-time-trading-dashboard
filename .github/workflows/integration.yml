@@ -32,6 +32,7 @@ jobs:
               - 'scripts/history_smoke.py'
               - 'scripts/replay_smoke.py'
               - 'scripts/strategy_smoke.py'
+              - 'scripts/metrics_smoke.py'
               - 'proto/**'
               - '.github/workflows/integration.yml'
 
@@ -85,6 +86,8 @@ jobs:
         run: uv run --project services/gateway --frozen --python 3.12 python scripts/gateway_smoke.py ws://localhost:8080/ws/sim/BTC-SIM
       - name: The paper trader trades on the simulator and its PnL reaches the browser
         run: uv run --project services/gateway --frozen --python 3.12 python scripts/strategy_smoke.py ws://localhost:8080/ws/sim/BTC-SIM
+      - name: Per-hop latency from the gateway's /metrics
+        run: python3 scripts/metrics_smoke.py http://localhost:8080/metrics bus_to_gateway gateway_hold
       - name: Build the ingest image
         run: docker compose --profile feeds build ingest
       - name: Logs on failure

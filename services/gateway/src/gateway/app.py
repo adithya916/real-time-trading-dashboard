@@ -19,11 +19,14 @@ from collections.abc import AsyncIterator, Callable, Coroutine, Sequence
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Query, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from gateway.history import VIEWS, History, Unavailable
 from gateway.hub import CLOSE_FRAME, Hub, Key
+from mdcommon.latency import LATENCY, register
+from mdcommon.metrics import RESYNCS
 from mdcommon.schema import Envelope
 
 log = logging.getLogger(__name__)
@@ -50,6 +53,7 @@ async def bus_forever(hub: Hub, bus_url: str) -> None:
 
     async def resync(key: Key) -> None:
         # Retry until a bucket snapshot plus the buffered envelopes close the gap.
+        RESYNCS.inc()
         try:
             while not hub.mirror(key).synced:
                 try:
@@ -70,6 +74,7 @@ async def bus_forever(hub: Hub, bus_url: str) -> None:
 
     async def on_message(msg: Any) -> None:
         envelope = Envelope.FromString(msg.data)
+        LATENCY.record_ns("bus_to_gateway", envelope.ts_bus_ns, time.time_ns())
         key = (envelope.venue, envelope.symbol)
         new = key not in hub.mirrors
         if hub.on_envelope(envelope) or (new and not hub.mirror(key).synced):
@@ -93,6 +98,7 @@ def create_app(
     """`background` coroutines run for the app's lifetime, e.g. the demo replay."""
     hub = hub or Hub()
     history = history or History(None)
+    register()  # per-hop latency on /metrics
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -109,6 +115,10 @@ def create_app(
     app = FastAPI(lifespan=lifespan)
     app.state.hub = hub
     app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["GET"])
+
+    @app.get("/metrics")
+    async def metrics() -> Response:
+        return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
     @app.get("/health")
     async def health() -> dict[str, str]:

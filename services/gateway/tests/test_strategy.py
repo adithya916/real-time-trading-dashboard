@@ -32,3 +32,25 @@ def test_the_latest_strategy_state_reaches_viewers_once_per_tick() -> None:
     assert hub.mirrors[KEY].synced
     hub.tick(0.05)
     assert viewer.queue.empty()  # nothing new, nothing sent
+
+
+def test_metrics_show_viewers_frames_and_the_conflation_hold() -> None:
+    from fastapi.testclient import TestClient
+    from gateway.app import create_app
+
+    hub = Hub()
+    book = Snapshot(
+        bids=[Level(price_ticks=1, size_lots=1)], asks=[Level(price_ticks=2, size_lots=1)]
+    )
+    with TestClient(create_app(hub)) as client:
+        hub.on_envelope(envelope(1, snapshot=book))
+        with client.websocket_connect("/ws/sim/BTC-SIM") as ws:
+            delta = Envelope(venue="sim", symbol="BTC-SIM", seq=2)
+            delta.delta.updates.add(side=1, price_ticks=1, size_lots=5)
+            hub.on_envelope(delta)
+            first = Envelope.FromString(ws.receive_bytes())
+            text = client.get("/metrics").text
+    assert first.ts_gw_send_ns > 0  # frames built by the gateway carry its send time
+    assert 'md_gateway_viewers{symbol="BTC-SIM",venue="sim"} ' in text  # global across tests
+    assert 'md_gateway_frames_total{kind="snapshot"}' in text
+    assert 'md_latency_ms{hop="gateway_hold",quantile="0.99"}' in text

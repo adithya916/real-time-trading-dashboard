@@ -17,14 +17,19 @@ from simulator.orders import OrderDesk, serve
 log = logging.getLogger(__name__)
 
 
-async def run(symbols: list[str], bus_url: str, seed: int, speed: float) -> None:
+async def run(
+    symbols: list[str], bus_url: str, seed: int, speed: float, metrics_port: int = 0
+) -> None:
     from mdcommon.bus import BusPublisher
+    from mdcommon.latency import serve_metrics
 
+    if metrics_port:
+        serve_metrics(metrics_port)
     bus = await BusPublisher.connect(bus_url)
     adapter = SimulatorAdapter(symbols, seed=seed, speed=speed)
     pump = await serve(OrderDesk(adapter, time.time_ns), bus.nc)
     try:
-        await publish(adapter, bus)
+        await publish(adapter, bus, service="simulator")
     finally:
         pump.cancel()
         await bus.close()
@@ -36,9 +41,10 @@ def main() -> None:
     parser.add_argument("--bus", default="nats://localhost:4222")
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--speed", type=float, default=1.0, help="1 = real time")
+    parser.add_argument("--metrics-port", type=int, default=9103, help="0 turns /metrics off")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
-    asyncio.run(run(args.symbols, args.bus, args.seed, args.speed))
+    asyncio.run(run(args.symbols, args.bus, args.seed, args.speed, args.metrics_port))
 
 
 if __name__ == "__main__":
