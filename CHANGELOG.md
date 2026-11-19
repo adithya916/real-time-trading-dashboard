@@ -120,3 +120,10 @@
 
 - The first load test saturated the gateway near 500 viewers: every trade, metrics update and strategy state was its own WebSocket send, about 50 a second per viewer. Each tick's frames now go in one binary message, a size-delimited stream of envelopes (`mdcommon.wire`, Protobuf's standard framing), built once per symbol and shared by every in-sync viewer. That is at most 20 sends a second per viewer. Viewer queues count messages (100, about 5 s).
 - The browser worker (`worker/wire.ts`), the Go load generator (now also reporting messages per viewer per second), the smoke scripts and the tests read the new framing. ADR 002 has the reasoning and numbers.
+
+## Write-up
+
+- `docs/PERFORMANCE.md`: hardware and method (HdrHistograms, coordinated-omission correction, an open load model), before against now, the full load ramp to 10,000 asked-for viewers with a chart, where it breaks and why (one Python event loop near 2,000 viewers; the 10,000-viewer target was not reached), latency per hop, and Python against C++.
+- `docs/architecture.md` with diagrams of the pipeline, book sync, fan-out and deployment.
+- Decision records 003 (Protobuf with integer ticks), 004 (C++ core with pybind11), 005 (Parquet and TimescaleDB) and 006 (one free server behind Caddy), next to 001 (NATS) and 002 (the conflating gateway).
+- `bench/results/wsload.csv` (full ramp), `wsload-per-envelope.csv` (before batching) and `wsload.svg`, drawn by `scripts/plot_load.py`.

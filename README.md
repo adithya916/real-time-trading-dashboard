@@ -26,14 +26,18 @@ Design decisions are in [`docs/adr/`](docs/adr/); the build plan is [`docs/build
 
 ## Measured
 
-| | Value | Where |
-| --- | ---: | --- |
-| C++ `L2Book` updates (one core, GitHub runner) | 32.4 M/s | [`bench/results/cpp.md`](bench/results/cpp.md) |
-| C++ matching engine actions | 9.4 M/s | same |
-| Messages per viewer per symbol, gateway | ≤ 20/s (one frame per 50 ms tick) | `services/gateway` |
-| Messages per viewer, the original server (before) | 6,277/s | [`bench/results/baseline.md`](bench/results/baseline.md) |
+On a 4-CPU GitHub runner, with the whole stack and the load generator sharing it. Method, raw results and where it breaks: [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md).
 
-Driven from Python one message at a time, the C++ book is still slower than the Python one (0.4–0.7×): the gain needs the whole message loop in C++. Latency histograms and a load test of the gateway are next.
+| | Before (`v0-baseline`) | Now |
+| --- | ---: | ---: |
+| Messages to each viewer | 6,277/s | ≤ 20/s, every envelope delivered |
+| Viewers on one gateway, all connected | p99 over 100 ms at 50 | 1,000 at p99 119 ms; about 2,000 before connections time out |
+| Book updates, one core | ~39k/s | 32.4M/s (C++ `L2Book`) |
+| Matching engine | none | 9.4M actions/s |
+
+The plan's 10,000 viewers at p99 < 50 ms was not reached: one Python event loop saturates near 2,000 viewers. Several gateway processes on one port is the next step.
+
+How it fits together: [`docs/architecture.md`](docs/architecture.md). Decisions and their alternatives: [`docs/adr/`](docs/adr/).
 
 ## Repository layout
 
