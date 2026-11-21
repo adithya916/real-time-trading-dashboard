@@ -1,7 +1,8 @@
 """Plot load-test CSVs (bench/wsload) as an SVG: p99 round trip against viewers asked for.
 
     python scripts/plot_load.py bench/results/wsload.svg "one message per tick=bench/results/wsload.csv" \
-        "one send per envelope=bench/results/wsload-per-envelope.csv"
+        "one send per envelope=bench/results/wsload-per-envelope.csv" \
+        --title="WebSocket round trip p99 vs viewers, one gateway process"
 
 No plotting library: a few dozen lines of SVG, log scale on the y axis, a point per step, and
 steps where viewers failed to connect drawn hollow.
@@ -21,7 +22,7 @@ def load(path: str) -> list[dict[str, float]]:
         return [{k: float(v) for k, v in row.items()} for row in csv.DictReader(f)]
 
 
-def main(out: str, series_specs: list[str]) -> None:
+def main(out: str, series_specs: list[str], title: str) -> None:
     series = []
     for spec in series_specs:
         label, _, path = spec.partition("=")
@@ -41,7 +42,7 @@ def main(out: str, series_specs: list[str]) -> None:
     parts = [
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" font-family="system-ui, sans-serif" font-size="12">',
         f'<rect width="{W}" height="{H}" fill="#ffffff"/>',
-        f'<text x="{LEFT}" y="22" font-size="14" font-weight="600" fill="#0f172a">WebSocket round trip p99 vs viewers, one gateway process</text>',
+        f'<text x="{LEFT}" y="22" font-size="14" font-weight="600" fill="#0f172a">{title}</text>',
     ]
     decade = y_lo
     while decade <= y_hi:
@@ -88,4 +89,6 @@ def main(out: str, series_specs: list[str]) -> None:
 
 
 if __name__ == "__main__":
-    main(sys.argv[1], sys.argv[2:])
+    specs = [a for a in sys.argv[2:] if not a.startswith("--title=")]
+    titles = [a.removeprefix("--title=") for a in sys.argv[2:] if a.startswith("--title=")]
+    main(sys.argv[1], specs, titles[0] if titles else "WebSocket round trip p99 vs viewers")
