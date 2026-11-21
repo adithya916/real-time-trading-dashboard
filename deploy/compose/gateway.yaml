@@ -5,7 +5,9 @@ services:
       dockerfile: services/gateway/Dockerfile
     ports:
       - "${GATEWAY_PORT:-8080}:8080"
-    command: ["--bus", "nats://nats:4222", "--port", "8080", "--db", "postgresql://md:${TIMESCALE_PASSWORD:-md-local-only}@timescale:5432/md"]
+    # Four processes share port 8080 (SO_REUSEPORT); worker i serves metrics on 9110 + i, and
+    # deploy/prometheus/prometheus.yml scrapes 9110-9113, so change both together.
+    command: ["--bus", "nats://nats:4222", "--port", "8080", "--workers", "${GATEWAY_WORKERS:-4}", "--metrics-port", "9110", "--db", "postgresql://md:${TIMESCALE_PASSWORD:-md-local-only}@timescale:5432/md"]
     restart: unless-stopped
     depends_on:
       nats:

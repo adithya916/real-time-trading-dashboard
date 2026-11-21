@@ -127,3 +127,9 @@
 - `docs/architecture.md` with diagrams of the pipeline, book sync, fan-out and deployment.
 - Decision records 003 (Protobuf with integer ticks), 004 (C++ core with pybind11), 005 (Parquet and TimescaleDB) and 006 (one free server behind Caddy), next to 001 (NATS) and 002 (the conflating gateway).
 - `bench/results/wsload.csv` (full ramp), `wsload-per-envelope.csv` (before batching) and `wsload.svg`, drawn by `scripts/plot_load.py`.
+
+## Gateway workers
+
+- `python -m gateway --workers N` (Compose default 4, `GATEWAY_WORKERS`): N gateway processes on one port, each binding it with `SO_REUSEPORT` so the kernel spreads connections across them. Each has its own bus subscription, mirrors and tick, so nothing is shared. A worker that dies stops the rest, so the container restarts as a whole. `/health` reports which worker answered.
+- Each worker serves metrics on `--metrics-port` + its index (9110–9113), and Prometheus scrapes them all. The dashboard's latency panels show the worst worker per hop, and a new panel shows viewers per worker.
+- A test runs two workers in demo mode on Linux. It checks that connections reach both, that viewers on either get the book, and that SIGTERM to the parent stops every worker. The `bench-load` workflow takes the worker count as an input.

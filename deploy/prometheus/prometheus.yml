@@ -8,8 +8,10 @@ rule_files:
   - /etc/prometheus/alerts.yml
 
 scrape_configs:
+  # One target per gateway worker (GATEWAY_WORKERS, default 4: metrics on 9110 + worker index).
   - job_name: gateway
-    static_configs: [{ targets: ["gateway:8080"] }]
+    static_configs:
+      - targets: ["gateway:9110", "gateway:9111", "gateway:9112", "gateway:9113"]
   - job_name: ingest
     static_configs: [{ targets: ["ingest:9101"] }]
   - job_name: analytics

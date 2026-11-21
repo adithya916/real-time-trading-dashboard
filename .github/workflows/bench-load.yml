@@ -15,6 +15,9 @@ on:
       rate:
         description: New connections per second while ramping
         default: "500"
+      workers:
+        description: Gateway processes (GATEWAY_WORKERS)
+        default: "4"
   pull_request:
     paths:
       - 'bench/wsload/**'
@@ -63,6 +66,7 @@ jobs:
       STEPS: ${{ github.event.inputs.steps || '100,500,1000,2000' }}
       HOLD: ${{ github.event.inputs.hold || '20s' }}
       RATE: ${{ github.event.inputs.rate || '250' }}
+      GATEWAY_WORKERS: ${{ github.event.inputs.workers || '4' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -93,7 +97,7 @@ jobs:
           ./bench/wsload/wsload -url ws://localhost:8080/ws/sim/BTC-SIM \
             -steps "$STEPS" -hold "$HOLD" -rate "$RATE" -csv bench/results/wsload.csv | tee table.md
           {
-            echo "### WebSocket load: steps $STEPS, $HOLD each"
+            echo "### WebSocket load: steps $STEPS, $HOLD each, $GATEWAY_WORKERS gateway workers"
             echo
             grep '^|' table.md
             echo
