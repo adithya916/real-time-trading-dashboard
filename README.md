@@ -31,11 +31,11 @@ On a 4-CPU GitHub runner, with the whole stack and the load generator sharing it
 | | Before (`v0-baseline`) | Now |
 | --- | ---: | ---: |
 | Messages to each viewer | 6,277/s | ≤ 20/s, every envelope delivered |
-| Viewers on one gateway, all connected | p99 over 100 ms at 50 | 1,000 at p99 119 ms; about 2,000 before connections time out |
+| Viewers on one server, all connected | p99 over 100 ms at 50 | 1,000 at p99 21 ms, 2,000 at 117 ms (4 gateway workers); 4,173 connected at most |
 | Book updates, one core | ~39k/s | 32.4M/s (C++ `L2Book`) |
 | Matching engine | none | 9.4M actions/s |
 
-The plan's 10,000 viewers at p99 < 50 ms was not reached: one Python event loop saturates near 2,000 viewers. Several gateway processes on one port is the next step.
+The plan's 10,000 viewers at p99 < 50 ms was not reached. One gateway process saturates near 2,000 viewers; four on one port (`SO_REUSEPORT`) reach about 4,000 on a 4-vCPU runner that also runs the load generator.
 
 How it fits together: [`docs/architecture.md`](docs/architecture.md). Decisions and their alternatives: [`docs/adr/`](docs/adr/).
 

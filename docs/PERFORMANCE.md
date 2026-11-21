@@ -27,7 +27,7 @@ nothing is estimated. Where a target from the build plan was missed, it says so.
 | | Original app (`v0-baseline`) | Now |
 | --- | ---: | ---: |
 | Messages to each viewer | 6,277/s, every tick | ≤ 20/s (one per 50 ms tick), every envelope delivered |
-| Viewers on one server, all connected, round trip p99 | p99 over 100 ms by 50 viewers | **1,000 at 119 ms** (500 at 21 ms) |
+| Viewers on one server, all connected, round trip p99 | p99 over 100 ms by 50 viewers | **1,000 at 21 ms, 2,000 at 117 ms** (4 gateway workers); up to 4,173 connected |
 | Book updates per second, one core | ~39k ticks/s through Python + Redis | **32.4M/s** in the C++ book alone |
 | Order matching | none | **9.4M actions/s** (C++ engine) |
 | Book correctness | random levels | Kraken CRC32-verified books, Binance sequence-verified, golden replay hashes |
@@ -56,9 +56,30 @@ had a round trip p99 of 1.7 s and 1,000 could not all connect. Sending each view
 message per tick, built once and shared by every viewer of the symbol (ADR 002), moved the
 knee from under 500 viewers to about 2,000.
 
+## Several gateway processes
+
+`--workers N` runs N gateway processes on one port (`SO_REUSEPORT`, so the kernel spreads new
+connections across them), each with its own bus subscription and mirrors. Three runs on the same
+commit, started together on three runners ([`wsload-workers-1.csv`](../bench/results/wsload-workers-1.csv),
+[`-2`](../bench/results/wsload-workers-2.csv), [`-4`](../bench/results/wsload-workers-4.csv)):
+
+![p99 round trip against viewers for 1, 2 and 4 workers](../bench/results/wsload-workers.svg)
+
+| Workers | Most viewers all connected | Round trip p99 at 1,000 | at 2,000 | at 3,000 | Most connected |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 2,000 | 70.5 ms | 344 ms | n/a | 2,192 |
+| 2 | 3,000 | 33.8 ms | 181 ms | 454 ms | 3,754 |
+| 4 | 3,000 | **21.0 ms** | **117 ms** | 406 ms | **4,173** |
+
+Four workers cut p99 at 1,000 viewers by more than three times and nearly double how many
+connect. It is less than linear because the four workers share the runner's 4 vCPUs with the load
+generator (several thousand connections of its own), NATS and the rest of the stack: past two
+workers they are competing for the same cores as their clients. The same runs put the
+single-worker knee between 2,000 and 2,500 viewers, as before, so runs are comparable.
+
 ## Where it breaks, and why
 
-- **One Python event loop.** The gateway is a single asyncio process. Each tick it appends one
+- **One Python event loop per worker.** Each gateway worker is a single asyncio process. Each tick it appends one
   message to every viewer's queue and each viewer's task writes it to its socket: at about
   2,000 viewers that is some 35,000 socket writes a second, and the loop saturates. Past
   that, the WebSocket handshakes of new viewers time out (the "failed to connect" column) and
@@ -67,10 +88,11 @@ knee from under 500 viewers to about 2,000.
   what a loop near its limit looks like.
 - **The load generator shares the CPUs.** Thousands of Go client goroutines, Docker, NATS and
   the other services run on the same 4 vCPUs, so these are lower bounds for a dedicated server.
-- **The target was 10,000 viewers at p99 < 50 ms. That was not reached.** The next steps,
-  in order of expected gain: several gateway processes on one port (`SO_REUSEPORT`), each with
-  its own bus subscription, which the design already allows; writing to sockets without a
-  task per viewer; or moving fan-out into a compiled server.
+- **The target was 10,000 viewers at p99 < 50 ms. That was not reached.** With four workers
+  it is about 1,000 viewers at p99 under 50 ms and 4,000 connected at all, on a 4-vCPU runner
+  that also runs the load generator. Measuring a dedicated server with the clients on another
+  machine is the next honest step; after that, writing to sockets without a task per viewer, or
+  moving fan-out into a compiled server.
 - **Staleness is bounded below by the tick**: book updates wait up to 50 ms for the next tick
   by design (the `gateway_hold` hop: p50 39 ms, max 67 ms when unloaded).
 

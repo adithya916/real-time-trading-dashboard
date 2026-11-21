@@ -187,7 +187,7 @@
       "id": 5,
       "type": "timeseries",
       "title": "Latency per hop, p99",
-      "description": "Last 1-2 minutes per hop, from HdrHistograms with coordinated-omission correction where measured on a schedule. exch_to_recv includes the venue clock's offset.",
+      "description": "Last 1-2 minutes per hop, from HdrHistograms with coordinated-omission correction where measured on a schedule. exch_to_recv includes the venue clock's offset. With several gateway workers, the worst worker per hop.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -231,7 +231,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "md_latency_ms{quantile=\"0.99\"}",
+          "expr": "max by (hop) (md_latency_ms{quantile=\"0.99\"})",
           "legendFormat": "{{hop}}"
         }
       ]
@@ -284,7 +284,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "md_latency_ms{quantile=\"0.5\"}",
+          "expr": "max by (hop) (md_latency_ms{quantile=\"0.5\"})",
           "legendFormat": "{{hop}}"
         }
       ]
@@ -337,7 +337,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "md_latency_ms{hop=\"bus_to_gateway\",quantile=\"0.5\"}",
+          "expr": "max(md_latency_ms{hop=\"bus_to_gateway\",quantile=\"0.5\"})",
           "legendFormat": "p50"
         },
         {
@@ -346,7 +346,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "md_latency_ms{hop=\"bus_to_gateway\",quantile=\"0.99\"}",
+          "expr": "max(md_latency_ms{hop=\"bus_to_gateway\",quantile=\"0.99\"})",
           "legendFormat": "p99"
         },
         {
@@ -355,7 +355,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "md_latency_ms{hop=\"bus_to_gateway\",quantile=\"0.999\"}",
+          "expr": "max(md_latency_ms{hop=\"bus_to_gateway\",quantile=\"0.999\"})",
           "legendFormat": "p99.9"
         },
         {
@@ -364,7 +364,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "md_latency_ms{hop=\"bus_to_gateway\",quantile=\"1\"}",
+          "expr": "max(md_latency_ms{hop=\"bus_to_gateway\",quantile=\"1\"})",
           "legendFormat": "max"
         }
       ]
@@ -576,7 +576,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "md_gateway_viewers",
+          "expr": "sum by (venue, symbol) (md_gateway_viewers)",
           "legendFormat": "{{venue}} {{symbol}}"
         }
       ]
@@ -709,7 +709,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "md_latency_ms{hop=\"order_round_trip\",quantile=\"0.99\"}",
+          "expr": "max(md_latency_ms{hop=\"order_round_trip\",quantile=\"0.99\"})",
           "legendFormat": "order round trip p99 (ms)"
         }
       ]
@@ -764,6 +764,59 @@
           },
           "expr": "rate(md_trades_stored_total[1m])",
           "legendFormat": "TimescaleDB"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "Viewers per gateway worker",
+      "description": "Connections spread across the gateway processes by the kernel (SO_REUSEPORT).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 44,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (instance) (md_gateway_viewers{job=\"gateway\"})",
+          "legendFormat": "{{instance}}"
         }
       ]
     }

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 from collections.abc import AsyncIterator, Callable, Coroutine, Sequence
 from contextlib import asynccontextmanager
@@ -94,6 +95,7 @@ def create_app(
     bus_url: str | None = None,
     background: Sequence[Callable[[], Coroutine[Any, Any, Any]]] = (),
     history: History | None = None,
+    worker: int = 0,
 ) -> FastAPI:
     """`background` coroutines run for the app's lifetime, e.g. the demo replay."""
     hub = hub or Hub()
@@ -121,8 +123,9 @@ def create_app(
         return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
     @app.get("/health")
-    async def health() -> dict[str, str]:
-        return {"status": "ok"}
+    async def health() -> dict[str, str | int]:
+        # Which worker answered: with --workers, connections spread across processes.
+        return {"status": "ok", "worker": worker, "pid": os.getpid()}
 
     @app.get("/symbols")
     async def symbols() -> list[dict[str, str]]:
