@@ -24,8 +24,9 @@ on:
       - 'services/gateway/**'
       - '.github/workflows/bench-load.yml'
 
+# Pull requests replace their previous run; manual runs (comparisons) never cancel each other.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
   cancel-in-progress: true
 
 jobs:
